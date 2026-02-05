@@ -1,182 +1,109 @@
 'use client';
 
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '@/lib/store';
 import { WS_URL } from '@/lib/constants';
-import toast from 'react-hot-toast';
+
+interface TradeData {
+    matchId: string;
+    asset: string;
+    action: 'buy' | 'sell';
+    quantity: number;
+    price: number;
+}
 
 export function useWebSocket() {
-    const wsRef = useRef<WebSocket | null>(null);
-    const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
-
-    const {
-        address,
-        setWebSocket,
-        setPrices,
-        setCurrentMatch,
-        setOpenMatches,
-        updateMatch,
-    } = useGameStore();
+    const ws = useRef<WebSocket | null>(null);
+    const { address, setOpenMatches, setCurrentMatch, updatePortfolio } = useGameStore();
 
     const connect = useCallback(() => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) return;
+        if (!address || ws.current?.readyState === WebSocket.OPEN) return;
 
-        const ws = new WebSocket(WS_URL);
-        wsRef.current = ws;
+        ws.current = new WebSocket(WS_URL);
 
-        ws.onopen = () => {
+        ws.current.onopen = () => {
             console.log('WebSocket connected');
-            setWebSocket(ws);
+            ws.current?.send(JSON.stringify({
+                type: 'auth',
+                address,
+            }));
+        };
 
-            // Authenticate if we have an address
-            if (address) {
-                ws.send(JSON.stringify({
-                    type: 'auth',
-                    payload: { address }
-                }));
+        ws.current.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+
+            switch (data.type) {
+                case 'matches':
+                    setOpenMatches(data.matches);
+                    break;
+                case 'match_created':
+                case 'match_joined':
+                case 'match_started':
+                    setCurrentMatch(data.match);
+                    break;
+                case 'match_update':
+                    setCurrentMatch(data.match);
+                    break;
+                case 'trade_executed':
+                    updatePortfolio(data.portfolio);
+                    break;
+                case 'match_ended':
+                    setCurrentMatch(data.match);
+                    break;
+                default:
+                    console.log('Unknown message:', data);
             }
         };
 
-        ws.onmessage = (event) => {
-            try {
-                const message = JSON.parse(event.data);
-                handleMessage(message);
-            } catch (error) {
-                console.error('Failed to parse message:', error);
-            }
-        };
-
-        ws.onclose = () => {
+        ws.current.onclose = () => {
             console.log('WebSocket disconnected');
-            setWebSocket(null);
-
-            // Attempt to reconnect after 3 seconds
-            reconnectTimeoutRef.current = setTimeout(() => {
-                connect();
-            }, 3000);
+            setTimeout(connect, 3000);
         };
 
-        ws.onerror = (error) => {
+        ws.current.onerror = (error) => {
             console.error('WebSocket error:', error);
         };
-    }, [address, setWebSocket]);
-
-    const handleMessage = useCallback((message: { type: string; payload: any }) => {
-        const { type, payload } = message;
-
-        switch (type) {
-            case 'auth_success':
-                console.log('Authenticated:', payload.address);
-                // Request open matches after auth
-                wsRef.current?.send(JSON.stringify({ type: 'get_matches', payload: {} }));
-                break;
-
-            case 'prices':
-                setPrices(payload);
-                break;
-
-            case 'open_matches':
-                setOpenMatches(payload.matches);
-                break;
-
-            case 'match_created':
-                setCurrentMatch(payload.match);
-                toast.success('Match created! Waiting for opponent...');
-                break;
-
-            case 'match_started':
-                setCurrentMatch(payload.match);
-                toast.success('Match started! Good luck!');
-                break;
-
-            case 'match_updated':
-                updateMatch(payload.match);
-                break;
-
-            case 'match_restored':
-                setCurrentMatch(payload.match);
-                toast('Restored your active match');
-                break;
-
-            case 'trade_executed':
-                toast.success(`Trade executed!`);
-                break;
-
-            case 'match_ended':
-                setCurrentMatch(payload.match);
-                break;
-
-            case 'match_cancelled':
-                setCurrentMatch(null);
-                toast('Match cancelled');
-                break;
-
-            case 'error':
-                toast.error(payload.message);
-                break;
-
-            default:
-                console.log('Unknown message type:', type);
-        }
-    }, [setPrices, setOpenMatches, setCurrentMatch, updateMatch]);
-
-    const sendMessage = useCallback((type: string, payload: any) => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify({ type, payload }));
-        } else {
-            toast.error('Not connected to server');
-        }
-    }, []);
-
-    const authenticate = useCallback((walletAddress: string) => {
-        sendMessage('auth', { address: walletAddress });
-    }, [sendMessage]);
-
-    const createMatch = useCallback((stakeAmount: number, duration: number, assets: string[]) => {
-        sendMessage('create_match', { stakeAmount, duration, assets });
-    }, [sendMessage]);
-
-    const joinMatch = useCallback((matchId: string) => {
-        sendMessage('join_match', { matchId });
-    }, [sendMessage]);
-
-    const executeTrade = useCallback((
-        matchId: string,
-        asset: 'eth' | 'btc' | 'sol',
-        side: 'buy' | 'sell',
-        amount: number
-    ) => {
-        sendMessage('trade', { matchId, asset, side, amount });
-    }, [sendMessage]);
-
-    const cancelMatch = useCallback((matchId: string) => {
-        sendMessage('cancel_match', { matchId });
-    }, [sendMessage]);
+    }, [address, setOpenMatches, setCurrentMatch, updatePortfolio]);
 
     useEffect(() => {
         connect();
-
         return () => {
-            if (reconnectTimeoutRef.current) {
-                clearTimeout(reconnectTimeoutRef.current);
-            }
-            wsRef.current?.close();
+            ws.current?.close();
         };
     }, [connect]);
 
-    // Re-authenticate when address changes
-    useEffect(() => {
-        if (address && wsRef.current?.readyState === WebSocket.OPEN) {
-            authenticate(address);
+    const send = useCallback((data: object) => {
+        if (ws.current?.readyState === WebSocket.OPEN) {
+            ws.current.send(JSON.stringify(data));
         }
-    }, [address, authenticate]);
+    }, []);
+
+    const createMatch = useCallback((stakeAmount: number, duration: number, assets: string[]) => {
+        send({
+            type: 'create_match',
+            stakeAmount,
+            duration,
+            assets,
+        });
+    }, [send]);
+
+    const joinMatch = useCallback((matchId: string) => {
+        send({
+            type: 'join_match',
+            matchId,
+        });
+    }, [send]);
+
+    const executeTrade = useCallback((trade: TradeData) => {
+        send({
+            type: 'trade',
+            ...trade,
+        });
+    }, [send]);
 
     return {
-        sendMessage,
-        authenticate,
         createMatch,
         joinMatch,
         executeTrade,
-        cancelMatch,
     };
 }

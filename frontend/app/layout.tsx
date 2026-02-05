@@ -1,26 +1,23 @@
 import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
+import './globals.css';
 import { Providers } from './providers';
 import { Navbar } from '@/components/layout/Navbar';
-import './globals.css';
+
+const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
     title: 'FlashDuel - 1v1 Trading Battles',
-    description: 'Trade against real opponents. Winner takes all.',
+    description: 'Trade against real opponents. Winner takes all. Powered by Yellow Network.',
 };
 
-export default function RootLayout({
-    children,
-}: {
-    children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
-        <html lang="en">
-            <body className="min-h-screen bg-dark-950">
+        <html lang="en" suppressHydrationWarning>
+            <body className={`${inter.className} min-h-screen pt-16`}>
                 <Providers>
                     <Navbar />
-                    <main className="pt-16">
-                        {children}
-                    </main>
+                    <main>{children}</main>
                 </Providers>
             </body>
         </html>

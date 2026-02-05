@@ -1,76 +1,59 @@
 import { create } from 'zustand';
-import { Match, PriceData, Trade } from '@/types';
+
+interface Portfolio {
+    usdc: number;
+    assets: { [key: string]: number };
+}
+
+interface Match {
+    id: string;
+    playerA: string;
+    playerB: string | null;
+    stakeAmount: number;
+    prizePool: number;
+    duration: number;
+    status: 'waiting' | 'active' | 'completed';
+    startedAt: number;
+    createdAt: number;
+    portfolioA: Portfolio;
+    portfolioB: Portfolio;
+    winner: string | null;
+}
 
 interface GameState {
-    // Connection
     isConnected: boolean;
     address: string | null;
-
-    // WebSocket
-    ws: WebSocket | null;
-
-    // Prices
-    prices: PriceData | null;
-
-    // Match
-    currentMatch: Match | null;
+    balance: number;
     openMatches: Match[];
+    currentMatch: Match | null;
+    portfolio: Portfolio;
 
-    // Actions
-    setConnected: (connected: boolean, address?: string) => void;
-    setWebSocket: (ws: WebSocket | null) => void;
-    setPrices: (prices: PriceData) => void;
-    setCurrentMatch: (match: Match | null) => void;
+    setConnected: (connected: boolean) => void;
+    setAddress: (address: string | null) => void;
+    setBalance: (balance: number) => void;
     setOpenMatches: (matches: Match[]) => void;
-    updateMatch: (match: Match) => void;
-    addTrade: (trade: Trade, playerAddress: string) => void;
+    setCurrentMatch: (match: Match | null) => void;
+    updatePortfolio: (portfolio: Portfolio) => void;
     reset: () => void;
 }
 
-export const useGameStore = create<GameState>((set, get) => ({
+const initialState = {
     isConnected: false,
     address: null,
-    ws: null,
-    prices: null,
-    currentMatch: null,
+    balance: 1000,
     openMatches: [],
+    currentMatch: null,
+    portfolio: { usdc: 0, assets: {} },
+};
 
-    setConnected: (connected, address) => set({
-        isConnected: connected,
-        address: address || null
-    }),
+export const useGameStore = create<GameState>((set) => ({
+    ...initialState,
 
-    setWebSocket: (ws) => set({ ws }),
-
-    setPrices: (prices) => set({ prices }),
-
-    setCurrentMatch: (match) => set({ currentMatch: match }),
-
+    setConnected: (connected) => set({ isConnected: connected }),
+    setAddress: (address) => set({ address }),
+    setBalance: (balance) => set({ balance }),
     setOpenMatches: (matches) => set({ openMatches: matches }),
-
-    updateMatch: (match) => set({ currentMatch: match }),
-
-    addTrade: (trade, playerAddress) => {
-        const { currentMatch, address } = get();
-        if (!currentMatch) return;
-
-        const isPlayerA = currentMatch.playerA?.address === playerAddress;
-        const player = isPlayerA ? 'playerA' : 'playerB';
-
-        set({
-            currentMatch: {
-                ...currentMatch,
-                [player]: currentMatch[player] ? {
-                    ...currentMatch[player]!,
-                    trades: [...currentMatch[player]!.trades, trade],
-                    tradesCount: currentMatch[player]!.tradesCount + 1,
-                } : null,
-            },
-        });
-    },
-
-    reset: () => set({
-        currentMatch: null,
-        openMatches: [],
-    }),
+    setCurrentMatch: (match) => set({ currentMatch: match }),
+    updatePortfolio: (portfolio) => set({ portfolio }),
+    reset: () => set(initialState),
 }));

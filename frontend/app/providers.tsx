@@ -1,48 +1,65 @@
 'use client';
 
-import { ReactNode } from 'react';
-import { WagmiConfig, createConfig, http } from 'wagmi';
-import { sepolia } from 'wagmi/chains';
+import { ReactNode, useEffect, useState } from 'react';
+import { WagmiProvider, createConfig, http } from 'wagmi';
+import { sepolia, base } from 'wagmi/chains';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Toaster } from 'react-hot-toast';
+import { RainbowKitProvider, getDefaultConfig, darkTheme, lightTheme } from '@rainbow-me/rainbowkit';
+import { ThemeProvider, useTheme } from 'next-themes';
+import '@rainbow-me/rainbowkit/styles.css';
 
-const config = createConfig({
-    chains: [sepolia],
+const config = getDefaultConfig({
+    appName: 'FlashDuel',
+    projectId: process.env.NEXT_PUBLIC_WALLET_CONNECT_ID || 'demo',
+    chains: [sepolia, base],
     transports: {
         [sepolia.id]: http(),
+        [base.id]: http(),
     },
+    ssr: true,
 });
 
 const queryClient = new QueryClient();
 
+function RainbowKitWrapper({ children }: { children: ReactNode }) {
+    const { resolvedTheme } = useTheme();
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    if (!mounted) {
+        return <>{children}</>;
+    }
+
+    return (
+        <RainbowKitProvider
+            theme={resolvedTheme === 'dark' ? darkTheme({
+                accentColor: '#8B5CF6',
+                accentColorForeground: 'white',
+                borderRadius: 'large',
+            }) : lightTheme({
+                accentColor: '#8B5CF6',
+                accentColorForeground: 'white',
+                borderRadius: 'large',
+            })}
+        >
+            {children}
+        </RainbowKitProvider>
+    );
+}
+
 export function Providers({ children }: { children: ReactNode }) {
     return (
-        <WagmiConfig config={config}>
-            <QueryClientProvider client={queryClient}>
-                {children}
-                <Toaster
-                    position="bottom-right"
-                    toastOptions={{
-                        style: {
-                            background: '#1e293b',
-                            color: '#fff',
-                            border: '1px solid #334155',
-                        },
-                        success: {
-                            iconTheme: {
-                                primary: '#22c55e',
-                                secondary: '#fff',
-                            },
-                        },
-                        error: {
-                            iconTheme: {
-                                primary: '#ef4444',
-                                secondary: '#fff',
-                            },
-                        },
-                    }}
-                />
-            </QueryClientProvider>
-        </WagmiConfig>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+            <WagmiProvider config={config}>
+                <QueryClientProvider client={queryClient}>
+                    <RainbowKitWrapper>
+                        {children}
+                    </RainbowKitWrapper>
+                </QueryClientProvider>
+            </WagmiProvider>
+        </ThemeProvider>
     );
 }

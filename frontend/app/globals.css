@@ -2,147 +2,78 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
 :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 15, 23, 42;
-    --background-end-rgb: 2, 6, 23;
+    --background: #ffffff;
+    --foreground: #0f0f14;
+    --card: #f8f9fa;
+    --card-border: #e5e7eb;
+    --muted: #6b7280;
+    --primary: #8B5CF6;
+    --primary-hover: #7C3AED;
+    --success: #10B981;
+    --danger: #EF4444;
+}
+
+.dark {
+    --background: #0f0f14;
+    --foreground: #ffffff;
+    --card: #1a1a24;
+    --card-border: #2d2d3a;
+    --muted: #9CA3AF;
+    --primary: #8B5CF6;
+    --primary-hover: #A78BFA;
+    --success: #10B981;
+    --danger: #EF4444;
 }
 
 body {
-    color: rgb(var(--foreground-rgb));
-    background: linear-gradient(to bottom,
-            rgb(var(--background-start-rgb)),
-            rgb(var(--background-end-rgb)));
-    min-height: 100vh;
+    background-color: var(--background);
+    color: var(--foreground);
+    transition: background-color 0.3s, color 0.3s;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+.slider-thumb::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--primary);
+    cursor: pointer;
+    border: 2px solid white;
 }
 
-::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 4px;
+.slider-thumb::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--primary);
+    cursor: pointer;
+    border: 2px solid white;
 }
 
-::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.3);
-}
-
-/* Glow effects */
-.glow-green {
-    box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
-}
-
-.glow-red {
-    box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
-}
-
-.glow-cyan {
-    box-shadow: 0 0 20px rgba(34, 211, 238, 0.3);
-}
-
-/* Card hover effect */
-.card-hover {
-    transition: all 0.3s ease;
-}
-
-.card-hover:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-}
-
-/* Gradient text */
-.gradient-text {
-    background: linear-gradient(135deg, #22c55e 0%, #22d3ee 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-}
-
-/* Animated border */
-.animated-border {
-    position: relative;
-}
-
-.animated-border::before {
-    content: '';
-    position: absolute;
-    inset: -2px;
-    border-radius: inherit;
-    padding: 2px;
-    background: linear-gradient(135deg, #22c55e, #22d3ee, #a855f7);
-    -webkit-mask:
-        linear-gradient(#fff 0 0) content-box,
-        linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    animation: borderRotate 3s linear infinite;
-}
-
-@keyframes borderRotate {
-    from {
-        background: linear-gradient(0deg, #22c55e, #22d3ee, #a855f7);
-    }
-
-    to {
-        background: linear-gradient(360deg, #22c55e, #22d3ee, #a855f7);
-    }
-}
-
-/* Pulse animation for live indicator */
-.pulse-live {
-    animation: pulseLive 2s ease-in-out infinite;
-}
-
-@keyframes pulseLive {
+@keyframes bounce {
 
     0%,
     100% {
-        opacity: 1;
+        transform: translateY(0);
     }
 
     50% {
-        opacity: 0.5;
+        transform: translateY(-10px);
     }
 }
 
-/* Number ticker animation */
-.ticker-up {
-    animation: tickerUp 0.3s ease-out;
+.animate-bounce {
+    animation: bounce 0.6s ease-in-out infinite;
 }
 
-.ticker-down {
-    animation: tickerDown 0.3s ease-out;
+.glass {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-@keyframes tickerUp {
-    0% {
-        color: #22c55e;
-        transform: translateY(5px);
-    }
-
-    100% {
-        transform: translateY(0);
-    }
-}
-
-@keyframes tickerDown {
-    0% {
-        color: #ef4444;
-        transform: translateY(-5px);
-    }
-
-    100% {
-        transform: translateY(0);
-    }
+.dark .glass {
+    background: rgba(0, 0, 0, 0.3);
 }

@@ -1,40 +1,23 @@
-'use client';
-
-import { cn } from '@/lib/utils';
-
 interface SliderProps {
     value: number;
     onChange: (value: number) => void;
     min: number;
     max: number;
-    step?: number;
-    label?: string;
-    formatValue?: (value: number) => string;
+    step: number;
+    label: string;
+    formatValue: (value: number) => string;
     marks?: { value: number; label: string }[];
 }
 
-export function Slider({
-    value,
-    onChange,
-    min,
-    max,
-    step = 1,
-    label,
-    formatValue = (v) => v.toString(),
-    marks,
-}: SliderProps) {
+export function Slider({ value, onChange, min, max, step, label, formatValue, marks }: SliderProps) {
     const percentage = ((value - min) / (max - min)) * 100;
 
     return (
-        <div className="space-y-3">
-            {label && (
-                <div className="flex items-center justify-between">
-                    <span className="text-sm text-dark-300">{label}</span>
-                    <span className="text-sm font-semibold text-white bg-dark-700 px-3 py-1 rounded-lg">
-                        {formatValue(value)}
-                    </span>
-                </div>
-            )}
+        <div>
+            <div className="flex justify-between mb-2">
+                <label className="text-sm text-dark-300">{label}</label>
+                <span className="text-white font-semibold">{formatValue(value)}</span>
+            </div>
 
             <div className="relative">
                 <input
@@ -44,33 +27,20 @@ export function Slider({
                     step={step}
                     value={value}
                     onChange={(e) => onChange(Number(e.target.value))}
-                    className="w-full h-2 bg-dark-700 rounded-full appearance-none cursor-pointer
-                     [&::-webkit-slider-thumb]:appearance-none
-                     [&::-webkit-slider-thumb]:w-5
-                     [&::-webkit-slider-thumb]:h-5
-                     [&::-webkit-slider-thumb]:rounded-full
-                     [&::-webkit-slider-thumb]:bg-primary-500
-                     [&::-webkit-slider-thumb]:shadow-lg
-                     [&::-webkit-slider-thumb]:shadow-primary-500/50
-                     [&::-webkit-slider-thumb]:cursor-pointer
-                     [&::-webkit-slider-thumb]:transition-transform
-                     [&::-webkit-slider-thumb]:hover:scale-110"
+                    className="w-full h-2 bg-dark-700 rounded-full appearance-none cursor-pointer slider-thumb"
                     style={{
-                        background: `linear-gradient(to right, #22c55e ${percentage}%, #334155 ${percentage}%)`,
+                        background: `linear-gradient(to right, #8B5CF6 0%, #8B5CF6 ${percentage}%, #374151 ${percentage}%, #374151 100%)`,
                     }}
                 />
             </div>
 
             {marks && (
-                <div className="flex justify-between px-1">
+                <div className="flex justify-between mt-2">
                     {marks.map((mark) => (
                         <button
                             key={mark.value}
                             onClick={() => onChange(mark.value)}
-                            className={cn(
-                                'text-xs transition-colors',
-                                value === mark.value ? 'text-primary-400 font-semibold' : 'text-dark-400 hover:text-dark-200'
-                            )}
+                            className={`text-xs ${value === mark.value ? 'text-primary-400' : 'text-dark-500'}`}
                         >
                             {mark.label}
                         </button>

@@ -2,27 +2,28 @@
 
 import { useAccount, useConnect, useDisconnect } from 'wagmi';
 import { injected } from 'wagmi/connectors';
-import { Button } from '@/components/ui/Button';
-import { shortenAddress } from '@/lib/utils';
-import { useGameStore } from '@/lib/store';
 import { useEffect } from 'react';
+import { Button } from '@/components/ui/Button';
+import { useGameStore } from '@/lib/store';
+import { shortenAddress } from '@/lib/utils';
 
 export function ConnectButton() {
     const { address, isConnected } = useAccount();
     const { connect, isPending } = useConnect();
     const { disconnect } = useDisconnect();
-    const { setConnected } = useGameStore();
+    const { setConnected, setAddress } = useGameStore();
 
     useEffect(() => {
-        setConnected(isConnected, address);
-    }, [isConnected, address, setConnected]);
+        setConnected(isConnected);
+        setAddress(address || null);
+    }, [isConnected, address, setConnected, setAddress]);
 
     if (isConnected && address) {
         return (
             <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 bg-dark-700 px-4 py-2 rounded-xl">
-                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                    <span className="font-mono text-sm">{shortenAddress(address)}</span>
+                <div className="bg-dark-700 px-4 py-2 rounded-xl flex items-center gap-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full" />
+                    <span className="text-white font-semibold">{shortenAddress(address)}</span>
                 </div>
                 <Button variant="ghost" size="sm" onClick={() => disconnect()}>
                     Disconnect
@@ -36,7 +37,7 @@ export function ConnectButton() {
             onClick={() => connect({ connector: injected() })}
             loading={isPending}
         >
-            🦊 Connect Wallet
+            Connect Wallet
         </Button>
     );
 }
