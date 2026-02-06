@@ -2,7 +2,7 @@
 
 import { ReactNode, useEffect, useState } from 'react';
 import { WagmiProvider, createConfig, http } from 'wagmi';
-import { sepolia, base } from 'wagmi/chains';
+import { sepolia } from 'wagmi/chains';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RainbowKitProvider, getDefaultConfig, darkTheme, lightTheme } from '@rainbow-me/rainbowkit';
 import { ThemeProvider, useTheme } from 'next-themes';
@@ -10,11 +10,10 @@ import '@rainbow-me/rainbowkit/styles.css';
 
 const config = getDefaultConfig({
     appName: 'FlashDuel',
-    projectId: process.env.NEXT_PUBLIC_WALLET_CONNECT_ID || 'demo',
-    chains: [sepolia, base],
+    projectId: process.env.NEXT_PUBLIC_WALLET_CONNECT_ID || 'demo-project-id',
+    chains: [sepolia],
     transports: {
-        [sepolia.id]: http(),
-        [base.id]: http(),
+        [sepolia.id]: http('https://ethereum-sepolia-rpc.publicnode.com'),
     },
     ssr: true,
 });

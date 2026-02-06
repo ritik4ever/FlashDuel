@@ -1,5 +1,5 @@
-export const USDC_ADDRESS = process.env.NEXT_PUBLIC_USDC_ADDRESS as `0x${string}`;
-export const FLASHDUEL_ADDRESS = process.env.NEXT_PUBLIC_FLASHDUEL_ADDRESS as `0x${string}`;
+export const USDC_ADDRESS = (process.env.NEXT_PUBLIC_USDC_ADDRESS || '0x9FA9F632F2b6afCbb112Ee53D2638202EfE9B71A') as `0x${string}`;
+export const FLASHDUEL_ADDRESS = (process.env.NEXT_PUBLIC_FLASHDUEL_ADDRESS || '0x7c1d47ED0aFC7efCc2d6592b7Da3D838D97A00B4') as `0x${string}`;
 
 export const USDC_ABI = [
     {
@@ -165,10 +165,10 @@ export const FLASHDUEL_ABI = [
         stateMutability: 'view',
         inputs: [],
         outputs: [
-            { name: '_totalMatches', type: 'uint256' },
-            { name: '_totalPrizePool', type: 'uint256' },
-            { name: '_totalFees', type: 'uint256' },
-            { name: '_totalPlayers', type: 'uint256' },
+            { name: '', type: 'uint256' },
+            { name: '', type: 'uint256' },
+            { name: '', type: 'uint256' },
+            { name: '', type: 'uint256' },
         ],
     },
     {
