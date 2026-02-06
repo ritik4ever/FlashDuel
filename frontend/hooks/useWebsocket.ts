@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useCallback } from 'react';
+import { useAccount } from 'wagmi';
 import { useGameStore } from '@/lib/store';
-import { WS_URL } from '@/lib/constants';
+
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
 
 interface TradeData {
     matchId: string;
@@ -14,7 +16,8 @@ interface TradeData {
 
 export function useWebSocket() {
     const ws = useRef<WebSocket | null>(null);
-    const { address, setOpenMatches, setCurrentMatch, updatePortfolio } = useGameStore();
+    const { address, isConnected } = useAccount();
+    const { setOpenMatches, setCurrentMatch, updatePortfolio, setConnected, setAddress } = useGameStore();
 
     const connect = useCallback(() => {
         if (!address || ws.current?.readyState === WebSocket.OPEN) return;
@@ -50,14 +53,14 @@ export function useWebSocket() {
                 case 'match_ended':
                     setCurrentMatch(data.match);
                     break;
-                default:
-                    console.log('Unknown message:', data);
             }
         };
 
         ws.current.onclose = () => {
             console.log('WebSocket disconnected');
-            setTimeout(connect, 3000);
+            setTimeout(() => {
+                if (address) connect();
+            }, 3000);
         };
 
         ws.current.onerror = (error) => {
@@ -66,11 +69,19 @@ export function useWebSocket() {
     }, [address, setOpenMatches, setCurrentMatch, updatePortfolio]);
 
     useEffect(() => {
-        connect();
+        setConnected(isConnected);
+        setAddress(address || null);
+
+        if (isConnected && address) {
+            connect();
+        } else {
+            ws.current?.close();
+        }
+
         return () => {
             ws.current?.close();
         };
-    }, [connect]);
+    }, [isConnected, address, connect, setConnected, setAddress]);
 
     const send = useCallback((data: object) => {
         if (ws.current?.readyState === WebSocket.OPEN) {
@@ -79,31 +90,16 @@ export function useWebSocket() {
     }, []);
 
     const createMatch = useCallback((stakeAmount: number, duration: number, assets: string[]) => {
-        send({
-            type: 'create_match',
-            stakeAmount,
-            duration,
-            assets,
-        });
+        send({ type: 'create_match', stakeAmount, duration, assets });
     }, [send]);
 
     const joinMatch = useCallback((matchId: string) => {
-        send({
-            type: 'join_match',
-            matchId,
-        });
+        send({ type: 'join_match', matchId });
     }, [send]);
 
     const executeTrade = useCallback((trade: TradeData) => {
-        send({
-            type: 'trade',
-            ...trade,
-        });
+        send({ type: 'trade', ...trade });
     }, [send]);
 
-    return {
-        createMatch,
-        joinMatch,
-        executeTrade,
-    };
+    return { createMatch, joinMatch, executeTrade };
 }

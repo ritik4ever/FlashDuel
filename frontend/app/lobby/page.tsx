@@ -1,108 +1,134 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
+import { useAccount } from 'wagmi';
+import { formatUnits } from 'viem';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Slider } from '@/components/ui/Slider';
-import { useGameStore } from '@/lib/store';
+import {
+    useUSDC,
+    useUSDCBalance,
+    useUSDCAllowance,
+    useFlashDuel,
+    useOpenMatches,
+    useLeaderboard,
+    usePlatformStats
+} from '@/hooks/useContract';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { formatUSD, shortenAddress, getTimeAgo } from '@/lib/utils';
 import { STAKE_OPTIONS, DURATION_OPTIONS, ASSETS } from '@/lib/constants';
 
 export default function LobbyPage() {
     const router = useRouter();
-    const { isConnected, address, openMatches, currentMatch } = useGameStore();
-    const { createMatch, joinMatch } = useWebSocket();
+    const { address, isConnected } = useAccount();
+
+    const { balance, refetch: refetchBalance } = useUSDCBalance(address);
+    const { allowance, refetch: refetchAllowance } = useUSDCAllowance(address);
+    const { approve, faucet, isPending: isApproving } = useUSDC();
+    const {
+        createMatch: createMatchOnChain,
+        joinMatch: joinMatchOnChain,
+        isPending: isContractPending,
+        isConfirming,
+        isSuccess
+    } = useFlashDuel();
+    const { matches: openMatches, refetch: refetchMatches, isLoading: isLoadingMatches } = useOpenMatches();
+    const { leaderboard } = useLeaderboard(5);
+    const { stats: platformStats } = usePlatformStats();
 
     const [stakeAmount, setStakeAmount] = useState(50);
     const [duration, setDuration] = useState(300);
-    const [isCreating, setIsCreating] = useState(false);
+    const [step, setStep] = useState<'approve' | 'create'>('approve');
 
-    if (currentMatch?.status === 'active') {
-        router.push(`/match/${currentMatch.id}`);
-        return null;
-    }
+    useEffect(() => {
+        if (allowance >= stakeAmount) {
+            setStep('create');
+        } else {
+            setStep('approve');
+        }
+    }, [allowance, stakeAmount]);
+
+    useEffect(() => {
+        if (isSuccess) {
+            refetchBalance();
+            refetchAllowance();
+            refetchMatches();
+        }
+    }, [isSuccess, refetchBalance, refetchAllowance, refetchMatches]);
+
+    const handleApprove = () => {
+        approve(stakeAmount);
+    };
 
     const handleCreateMatch = () => {
-        if (!isConnected) return;
-        setIsCreating(true);
-        createMatch(stakeAmount, duration, ['eth', 'btc', 'sol']);
+        createMatchOnChain(stakeAmount, duration);
     };
 
-    const handleJoinMatch = (matchId: string) => {
-        if (!isConnected) return;
-        joinMatch(matchId);
+    const handleJoinMatch = (matchId: `0x${string}`) => {
+        joinMatchOnChain(matchId);
     };
 
-    const handleCancelWaiting = () => {
-        setIsCreating(false);
+    const handleFaucet = () => {
+        faucet();
     };
-
-    if (currentMatch?.status === 'waiting') {
-        return (
-            <div className="min-h-screen flex items-center justify-center px-4">
-                <Card className="p-8 max-w-md w-full text-center">
-                    <div className="w-16 h-16 bg-primary-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                        <motion.div
-                            animate={{ rotate: 360 }}
-                            transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-                            className="text-3xl"
-                        >
-                            ⚔️
-                        </motion.div>
-                    </div>
-
-                    <h2 className="text-2xl font-bold text-white mb-2">Waiting for Opponent</h2>
-                    <p className="text-dark-300 mb-6">
-                        Your match is ready. Waiting for someone to accept the challenge...
-                    </p>
-
-                    <div className="bg-dark-700 rounded-xl p-4 mb-6">
-                        <div className="flex justify-between mb-2">
-                            <span className="text-dark-400">Stake</span>
-                            <span className="text-white font-semibold">{formatUSD(currentMatch.stakeAmount)}</span>
-                        </div>
-                        <div className="flex justify-between mb-2">
-                            <span className="text-dark-400">Duration</span>
-                            <span className="text-white font-semibold">{currentMatch.duration / 60} min</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-dark-400">Prize Pool</span>
-                            <span className="text-primary-400 font-semibold">{formatUSD(currentMatch.prizePool)}</span>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center justify-center gap-2 mb-6">
-                        <div className="w-2 h-2 bg-primary-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                        <div className="w-2 h-2 bg-primary-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                        <div className="w-2 h-2 bg-primary-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                    </div>
-
-                    <Button variant="secondary" onClick={handleCancelWaiting} className="w-full">
-                        Cancel Match
-                    </Button>
-                </Card>
-            </div>
-        );
-    }
 
     return (
-        <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
+        <div className="min-h-screen py-8 px-4 sm:px-6 lg:px-8">
             <div className="max-w-7xl mx-auto">
-                <div className="text-center mb-12">
-                    <h1 className="text-4xl font-bold text-white mb-4">Battle Lobby</h1>
-                    <p className="text-dark-300">Create a match or join an existing one</p>
+                <div className="text-center mb-8">
+                    <h1 className="text-4xl font-bold mb-4">Battle Lobby</h1>
+                    <p className="text-muted">Create a match or join an existing one</p>
                 </div>
 
-                <div className="grid lg:grid-cols-2 gap-8">
-                    <Card className="p-6">
-                        <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                {platformStats && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                        <Card className="p-4 text-center">
+                            <div className="text-2xl font-bold text-primary">{platformStats.totalMatches}</div>
+                            <div className="text-sm text-muted">Total Matches</div>
+                        </Card>
+                        <Card className="p-4 text-center">
+                            <div className="text-2xl font-bold text-success">{formatUSD(platformStats.totalPrizePool)}</div>
+                            <div className="text-sm text-muted">Prize Distributed</div>
+                        </Card>
+                        <Card className="p-4 text-center">
+                            <div className="text-2xl font-bold">{platformStats.totalPlayers}</div>
+                            <div className="text-sm text-muted">Total Players</div>
+                        </Card>
+                        <Card className="p-4 text-center">
+                            <div className="text-2xl font-bold text-primary">{formatUSD(platformStats.totalFees)}</div>
+                            <div className="text-sm text-muted">Fees Collected</div>
+                        </Card>
+                    </div>
+                )}
+
+                <div className="grid lg:grid-cols-3 gap-8">
+                    <Card className="p-6 lg:col-span-1">
+                        <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
                             <span className="text-2xl">⚔️</span>
                             Create Match
                         </h2>
+
+                        <div className="bg-card border border-card-border rounded-xl p-4 mb-6">
+                            <div className="flex justify-between items-center">
+                                <span className="text-muted">Your Balance</span>
+                                <span className="font-bold">{formatUSD(balance)} USDC</span>
+                            </div>
+                            {balance < 10 && (
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    className="w-full mt-2"
+                                    onClick={handleFaucet}
+                                    loading={isApproving}
+                                >
+                                    Get Test USDC (Faucet)
+                                </Button>
+                            )}
+                        </div>
 
                         <div className="space-y-6">
                             <div>
@@ -119,15 +145,15 @@ export default function LobbyPage() {
                             </div>
 
                             <div>
-                                <label className="block text-sm text-dark-300 mb-3">Match Duration</label>
-                                <div className="grid grid-cols-3 gap-3">
+                                <label className="block text-sm text-muted mb-3">Match Duration</label>
+                                <div className="grid grid-cols-3 gap-2">
                                     {DURATION_OPTIONS.map((opt) => (
                                         <button
                                             key={opt.value}
                                             onClick={() => setDuration(opt.value)}
-                                            className={`py-3 px-4 rounded-xl font-semibold transition-all ${duration === opt.value
-                                                ? 'bg-primary-500 text-white'
-                                                : 'bg-dark-700 text-dark-300 hover:bg-dark-600'
+                                            className={`py-2 px-3 rounded-xl font-semibold text-sm transition-all ${duration === opt.value
+                                                ? 'bg-primary text-white'
+                                                : 'bg-card border border-card-border hover:border-primary/50'
                                                 }`}
                                         >
                                             {opt.label}
@@ -136,55 +162,50 @@ export default function LobbyPage() {
                                 </div>
                             </div>
 
-                            <div>
-                                <label className="block text-sm text-dark-300 mb-3">Tradeable Assets</label>
-                                <div className="flex gap-2">
-                                    {Object.entries(ASSETS).map(([key, asset]) => (
-                                        <div
-                                            key={key}
-                                            className="flex items-center gap-2 bg-dark-700 px-4 py-2 rounded-xl"
-                                        >
-                                            <div
-                                                className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
-                                                style={{ backgroundColor: asset.color + '30', color: asset.color }}
-                                            >
-                                                {asset.symbol[0]}
-                                            </div>
-                                            <span className="text-sm text-white">{asset.symbol}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="bg-dark-700/50 rounded-xl p-4">
+                            <div className="bg-card border border-card-border rounded-xl p-4">
                                 <div className="flex justify-between mb-2">
-                                    <span className="text-dark-400">Your Stake</span>
-                                    <span className="text-white font-semibold">{formatUSD(stakeAmount)}</span>
+                                    <span className="text-muted">Your Stake</span>
+                                    <span className="font-semibold">{formatUSD(stakeAmount)}</span>
                                 </div>
                                 <div className="flex justify-between mb-2">
-                                    <span className="text-dark-400">Prize Pool</span>
-                                    <span className="text-primary-400 font-bold">{formatUSD(stakeAmount * 2)}</span>
+                                    <span className="text-muted">Prize Pool</span>
+                                    <span className="text-primary font-bold">{formatUSD(stakeAmount * 2)}</span>
                                 </div>
                                 <div className="flex justify-between">
-                                    <span className="text-dark-400">Platform Fee (5%)</span>
-                                    <span className="text-dark-300">{formatUSD(stakeAmount * 2 * 0.05)}</span>
+                                    <span className="text-muted">Platform Fee (5%)</span>
+                                    <span className="text-muted">{formatUSD(stakeAmount * 2 * 0.05)}</span>
                                 </div>
                             </div>
 
-                            <Button
-                                onClick={handleCreateMatch}
-                                disabled={!isConnected || isCreating}
-                                loading={isCreating}
-                                className="w-full"
-                                size="lg"
-                            >
-                                {!isConnected ? 'Connect Wallet First' : 'Create Match'}
-                            </Button>
+                            {!isConnected ? (
+                                <Button disabled className="w-full" size="lg">
+                                    Connect Wallet First
+                                </Button>
+                            ) : step === 'approve' ? (
+                                <Button
+                                    onClick={handleApprove}
+                                    loading={isApproving || isConfirming}
+                                    className="w-full"
+                                    size="lg"
+                                >
+                                    Approve USDC
+                                </Button>
+                            ) : (
+                                <Button
+                                    onClick={handleCreateMatch}
+                                    loading={isContractPending || isConfirming}
+                                    disabled={balance < stakeAmount}
+                                    className="w-full"
+                                    size="lg"
+                                >
+                                    Create Match
+                                </Button>
+                            )}
                         </div>
                     </Card>
 
-                    <Card className="p-6">
-                        <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                    <Card className="p-6 lg:col-span-1">
+                        <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
                             <span className="text-2xl">🎯</span>
                             Open Matches
                             {openMatches.length > 0 && (
@@ -192,54 +213,99 @@ export default function LobbyPage() {
                             )}
                         </h2>
 
-                        {openMatches.length === 0 ? (
+                        {isLoadingMatches ? (
+                            <div className="text-center py-12">
+                                <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full mx-auto" />
+                            </div>
+                        ) : openMatches.length === 0 ? (
                             <div className="text-center py-12">
                                 <div className="text-4xl mb-4">🏜️</div>
-                                <p className="text-dark-400">No open matches right now</p>
-                                <p className="text-dark-500 text-sm">Create one and wait for challengers!</p>
+                                <p className="text-muted">No open matches right now</p>
+                                <p className="text-muted/60 text-sm">Create one and wait for challengers!</p>
                             </div>
                         ) : (
-                            <div className="space-y-4">
-                                {openMatches.map((match) => (
+                            <div className="space-y-4 max-h-[400px] overflow-y-auto">
+                                {openMatches.map((match: any) => (
                                     <motion.div
                                         key={match.id}
                                         initial={{ opacity: 0, y: 10 }}
                                         animate={{ opacity: 1, y: 0 }}
-                                        className="bg-dark-700 rounded-xl p-4 hover:bg-dark-600 transition-colors"
+                                        className="bg-card border border-card-border rounded-xl p-4 hover:border-primary/50 transition-all"
                                     >
                                         <div className="flex items-center justify-between mb-3">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-accent-500 rounded-full flex items-center justify-center text-white font-bold">
+                                                <div className="w-10 h-10 bg-gradient-to-br from-primary to-cyan-500 rounded-full flex items-center justify-center text-white font-bold">
                                                     {match.playerA.slice(2, 4).toUpperCase()}
                                                 </div>
                                                 <div>
-                                                    <p className="text-white font-semibold">{shortenAddress(match.playerA)}</p>
-                                                    <p className="text-dark-400 text-sm">{getTimeAgo(match.createdAt)}</p>
+                                                    <p className="font-semibold">{shortenAddress(match.playerA)}</p>
+                                                    <p className="text-muted text-sm">{getTimeAgo(Number(match.createdAt) * 1000)}</p>
                                                 </div>
                                             </div>
-                                            <Badge variant="warning">{match.duration / 60}m</Badge>
+                                            <Badge variant="warning">{Number(match.duration) / 60}m</Badge>
                                         </div>
 
-                                        <div className="flex items-center justify-between">
+                                        <div className="flex items-center justify-between mb-3">
                                             <div>
-                                                <p className="text-dark-400 text-sm">Stake</p>
-                                                <p className="text-white font-bold">{formatUSD(match.stakeAmount)}</p>
+                                                <p className="text-muted text-sm">Stake</p>
+                                                <p className="font-bold">{formatUSD(Number(formatUnits(match.stakeAmount, 6)))}</p>
                                             </div>
                                             <div className="text-right">
-                                                <p className="text-dark-400 text-sm">Prize Pool</p>
-                                                <p className="text-primary-400 font-bold">{formatUSD(match.prizePool)}</p>
+                                                <p className="text-muted text-sm">Prize Pool</p>
+                                                <p className="text-primary font-bold">{formatUSD(Number(formatUnits(match.stakeAmount, 6)) * 2)}</p>
                                             </div>
                                         </div>
 
                                         <Button
                                             onClick={() => handleJoinMatch(match.id)}
-                                            disabled={!isConnected || match.playerA === address}
-                                            className="w-full mt-4"
+                                            disabled={!isConnected || match.playerA.toLowerCase() === address?.toLowerCase()}
+                                            loading={isContractPending || isConfirming}
+                                            className="w-full"
                                             size="sm"
                                         >
-                                            {match.playerA === address ? 'Your Match' : 'Join Battle'}
+                                            {match.playerA.toLowerCase() === address?.toLowerCase() ? 'Your Match' : 'Join Battle'}
                                         </Button>
                                     </motion.div>
+                                ))}
+                            </div>
+                        )}
+                    </Card>
+
+                    <Card className="p-6 lg:col-span-1">
+                        <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
+                            <span className="text-2xl">🏆</span>
+                            Leaderboard
+                        </h2>
+
+                        {leaderboard.length === 0 ? (
+                            <div className="text-center py-12">
+                                <div className="text-4xl mb-4">📊</div>
+                                <p className="text-muted">No players yet</p>
+                                <p className="text-muted/60 text-sm">Be the first to compete!</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {leaderboard.map((entry: any, index: number) => (
+                                    <div
+                                        key={entry.player}
+                                        className="flex items-center gap-3 p-3 bg-card border border-card-border rounded-xl"
+                                    >
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${index === 0 ? 'bg-yellow-500 text-black' :
+                                            index === 1 ? 'bg-gray-400 text-black' :
+                                                index === 2 ? 'bg-orange-600 text-white' :
+                                                    'bg-card-border'
+                                            }`}>
+                                            {index + 1}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-semibold truncate">{shortenAddress(entry.player)}</p>
+                                            <p className="text-muted text-sm">{Number(entry.wins)} wins / {Number(entry.totalMatches)} matches</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-success font-bold">{formatUSD(Number(formatUnits(entry.earnings, 6)))}</p>
+                                            <p className="text-muted text-sm">{(Number(entry.winRate) / 100).toFixed(0)}% WR</p>
+                                        </div>
+                                    </div>
                                 ))}
                             </div>
                         )}
