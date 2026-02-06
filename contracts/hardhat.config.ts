@@ -2,10 +2,17 @@ import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 import * as dotenv from "dotenv";
 
+// Load .env
 dotenv.config();
 
-const PRIVATE_KEY = process.env.PRIVATE_KEY || "0x0000000000000000000000000000000000000000000000000000000000000000";
-const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL || "https://rpc.sepolia.org";
+// Debug: Print loaded values (remove in production!)
+console.log("=== ENV DEBUG ===");
+console.log("PRIVATE_KEY length:", process.env.PRIVATE_KEY?.length || 0);
+console.log("SEPOLIA_RPC_URL:", process.env.SEPOLIA_RPC_URL || "NOT SET");
+console.log("=================");
+
+const PRIVATE_KEY = process.env.PRIVATE_KEY || "";
+const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com";
 
 const config: HardhatUserConfig = {
     solidity: {
@@ -27,7 +34,7 @@ const config: HardhatUserConfig = {
         },
         sepolia: {
             url: SEPOLIA_RPC,
-            accounts: [PRIVATE_KEY],
+            accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
             chainId: 11155111,
         },
     },
