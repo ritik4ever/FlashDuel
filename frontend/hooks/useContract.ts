@@ -7,7 +7,7 @@ import { parseUnits, formatUnits } from 'viem';
 export const USDC_ADDRESS = (process.env.NEXT_PUBLIC_USDC_ADDRESS || '0x9FA9F632F2b6afCbb112Ee53D2638202EfE9B71A') as `0x${string}`;
 export const FLASHDUEL_ADDRESS = (process.env.NEXT_PUBLIC_FLASHDUEL_ADDRESS || '0x7c1d47ED0aFC7efCc2d6592b7Da3D838D97A00B4') as `0x${string}`;
 
-// USDC ABI (ERC20 + faucet)
+// USDC ABI
 export const USDC_ABI = [
     {
         name: 'approve',
@@ -42,20 +42,6 @@ export const USDC_ABI = [
         stateMutability: 'nonpayable',
         inputs: [],
         outputs: [],
-    },
-    {
-        name: 'decimals',
-        type: 'function',
-        stateMutability: 'view',
-        inputs: [],
-        outputs: [{ type: 'uint8' }],
-    },
-    {
-        name: 'symbol',
-        type: 'function',
-        stateMutability: 'view',
-        inputs: [],
-        outputs: [{ type: 'string' }],
     },
 ] as const;
 
@@ -160,40 +146,56 @@ export const FLASHDUEL_ABI = [
             { name: '', type: 'uint256' },
         ],
     },
+    {
+        name: 'getMatch',
+        type: 'function',
+        stateMutability: 'view',
+        inputs: [{ name: 'matchId', type: 'bytes32' }],
+        outputs: [
+            {
+                type: 'tuple',
+                components: [
+                    { name: 'id', type: 'bytes32' },
+                    { name: 'playerA', type: 'address' },
+                    { name: 'playerB', type: 'address' },
+                    { name: 'stakeAmount', type: 'uint256' },
+                    { name: 'prizePool', type: 'uint256' },
+                    { name: 'createdAt', type: 'uint256' },
+                    { name: 'startedAt', type: 'uint256' },
+                    { name: 'endedAt', type: 'uint256' },
+                    { name: 'duration', type: 'uint256' },
+                    { name: 'status', type: 'uint8' },
+                    { name: 'winner', type: 'address' },
+                    { name: 'playerAScore', type: 'int256' },
+                    { name: 'playerBScore', type: 'int256' },
+                ],
+            },
+        ],
+    },
 ] as const;
 
 // ============================================
-// USDC BALANCE - READ FROM BLOCKCHAIN
+// USDC BALANCE
 // ============================================
 export function useUSDCBalance(address: `0x${string}` | undefined) {
-    const { data, refetch, isLoading, isError, error } = useReadContract({
+    const { data, refetch, isLoading, isError } = useReadContract({
         address: USDC_ADDRESS,
         abi: USDC_ABI,
         functionName: 'balanceOf',
         args: address ? [address] : undefined,
         query: {
             enabled: !!address,
-            refetchInterval: 5000, // Refetch every 5 seconds
-            staleTime: 3000,
+            refetchInterval: 5000,
         },
     });
 
-    // USDC has 6 decimals - convert from raw to human readable
-    const balanceRaw = data ?? BigInt(0);
-    const balance = Number(formatUnits(balanceRaw, 6));
+    const balance = data ? Number(formatUnits(data, 6)) : 0;
 
-    return {
-        balance,          // Human readable (e.g., 100.50)
-        balanceRaw,       // Raw BigInt
-        refetch,
-        isLoading,
-        isError,
-        error,
-    };
+    return { balance, balanceRaw: data || BigInt(0), refetch, isLoading, isError };
 }
 
 // ============================================
-// USDC ALLOWANCE - CHECK APPROVAL
+// USDC ALLOWANCE
 // ============================================
 export function useUSDCAllowance(owner: `0x${string}` | undefined) {
     const { data, refetch, isLoading } = useReadContract({
@@ -207,41 +209,24 @@ export function useUSDCAllowance(owner: `0x${string}` | undefined) {
         },
     });
 
-    const allowanceRaw = data ?? BigInt(0);
-    const allowance = Number(formatUnits(allowanceRaw, 6));
+    const allowance = data ? Number(formatUnits(data, 6)) : 0;
 
-    return {
-        allowance,
-        allowanceRaw,
-        refetch,
-        isLoading,
-    };
+    return { allowance, allowanceRaw: data || BigInt(0), refetch, isLoading };
 }
 
 // ============================================
-// USDC OPERATIONS - APPROVE & FAUCET
+// USDC OPERATIONS
 // ============================================
 export function useUSDC() {
     const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
     const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
     const approve = (amount: number) => {
-        const amountInWei = parseUnits(amount.toString(), 6);
         writeContract({
             address: USDC_ADDRESS,
             abi: USDC_ABI,
             functionName: 'approve',
-            args: [FLASHDUEL_ADDRESS, amountInWei],
-        });
-    };
-
-    const approveMax = () => {
-        // Approve max uint256
-        writeContract({
-            address: USDC_ADDRESS,
-            abi: USDC_ABI,
-            functionName: 'approve',
-            args: [FLASHDUEL_ADDRESS, BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')],
+            args: [FLASHDUEL_ADDRESS, parseUnits(amount.toString(), 6)],
         });
     };
 
@@ -253,33 +238,22 @@ export function useUSDC() {
         });
     };
 
-    return {
-        approve,
-        approveMax,
-        faucet,
-        hash,
-        isPending,
-        isConfirming,
-        isSuccess,
-        error,
-        reset,
-    };
+    return { approve, faucet, hash, isPending, isConfirming, isSuccess, error, reset };
 }
 
 // ============================================
-// FLASHDUEL CONTRACT OPERATIONS
+// FLASHDUEL OPERATIONS
 // ============================================
 export function useFlashDuel() {
     const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
     const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
     const createMatch = (stakeAmount: number, duration: number) => {
-        const stakeInWei = parseUnits(stakeAmount.toString(), 6);
         writeContract({
             address: FLASHDUEL_ADDRESS,
             abi: FLASHDUEL_ABI,
             functionName: 'createMatch',
-            args: [stakeInWei, BigInt(duration)],
+            args: [parseUnits(stakeAmount.toString(), 6), BigInt(duration)],
         });
     };
 
@@ -301,21 +275,11 @@ export function useFlashDuel() {
         });
     };
 
-    return {
-        createMatch,
-        joinMatch,
-        cancelMatch,
-        hash,
-        isPending,
-        isConfirming,
-        isSuccess,
-        error,
-        reset,
-    };
+    return { createMatch, joinMatch, cancelMatch, hash, isPending, isConfirming, isSuccess, error, reset };
 }
 
 // ============================================
-// READ CONTRACT DATA
+// READ OPERATIONS
 // ============================================
 export function useOpenMatches() {
     const { data, refetch, isLoading, isError } = useReadContract({
@@ -327,12 +291,22 @@ export function useOpenMatches() {
         },
     });
 
-    return {
-        matches: data || [],
-        refetch,
-        isLoading,
-        isError,
-    };
+    return { matches: data || [], refetch, isLoading, isError };
+}
+
+export function useMatch(matchId: `0x${string}` | undefined) {
+    const { data, refetch, isLoading } = useReadContract({
+        address: FLASHDUEL_ADDRESS,
+        abi: FLASHDUEL_ABI,
+        functionName: 'getMatch',
+        args: matchId ? [matchId] : undefined,
+        query: {
+            enabled: !!matchId,
+            refetchInterval: 3000,
+        },
+    });
+
+    return { match: data, refetch, isLoading };
 }
 
 export function useLeaderboard(limit: number = 10) {
@@ -346,11 +320,7 @@ export function useLeaderboard(limit: number = 10) {
         },
     });
 
-    return {
-        leaderboard: data || [],
-        refetch,
-        isLoading,
-    };
+    return { leaderboard: data || [], refetch, isLoading };
 }
 
 export function usePlayerStats(address: `0x${string}` | undefined) {
@@ -365,11 +335,7 @@ export function usePlayerStats(address: `0x${string}` | undefined) {
         },
     });
 
-    return {
-        stats: data,
-        refetch,
-        isLoading,
-    };
+    return { stats: data, refetch, isLoading };
 }
 
 export function usePlatformStats() {

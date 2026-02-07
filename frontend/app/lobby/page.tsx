@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
+import { useRouter } from 'next/navigation';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { formatUnits } from 'viem';
 import { Card } from '@/components/ui/Card';
@@ -15,9 +16,7 @@ import {
     usePlatformStats,
     useLeaderboard,
     useOpenMatches,
-    FLASHDUEL_ADDRESS,
 } from '@/hooks/useContract';
-import { useWebSocket } from '@/hooks/useWebsocket';
 
 // Constants
 const STAKE_OPTIONS = [10, 25, 50, 100];
@@ -28,58 +27,84 @@ const DURATION_OPTIONS = [
 ];
 
 export default function LobbyPage() {
+    const router = useRouter();
     const { address, isConnected } = useAccount();
-    const [stakeAmount, setStakeAmount] = useState(50);
+    const [stakeAmount, setStakeAmount] = useState(10);
     const [duration, setDuration] = useState(300);
+    const [joiningMatchId, setJoiningMatchId] = useState<string | null>(null);
+    const [joiningStake, setJoiningStake] = useState<number>(0);
 
     // Contract hooks
     const { balance: usdcBalance, isLoading: balanceLoading, refetch: refetchBalance } = useUSDCBalance(address as `0x${string}`);
     const { allowance, refetch: refetchAllowance } = useUSDCAllowance(address as `0x${string}`);
-    const { approve, faucet, isPending: usdcPending, isConfirming: usdcConfirming, isSuccess: usdcSuccess, reset: resetUSDC } = useUSDC();
-    const { createMatch: createMatchOnChain, isPending: matchPending, isConfirming: matchConfirming, isSuccess: matchSuccess, reset: resetMatch } = useFlashDuel();
+    const {
+        approve,
+        faucet,
+        isPending: usdcPending,
+        isConfirming: usdcConfirming,
+        isSuccess: usdcSuccess,
+        reset: resetUSDC
+    } = useUSDC();
+    const {
+        createMatch: createMatchOnChain,
+        joinMatch: joinMatchOnChain,
+        isPending: matchPending,
+        isConfirming: matchConfirming,
+        isSuccess: matchSuccess,
+        hash: matchHash,
+        reset: resetMatch
+    } = useFlashDuel();
     const { stats: platformStats } = usePlatformStats();
     const { leaderboard } = useLeaderboard(5);
 
-    // Get open matches from CONTRACT (on-chain)
+    // Get open matches from CONTRACT
     const { matches: contractMatches, refetch: refetchContractMatches } = useOpenMatches();
 
-    // WebSocket for real-time updates
-    const {
-        isConnected: wsConnected,
-        openMatches: wsMatches,
-        createMatch: createMatchWS,
-        joinMatch: joinMatchWS,
-    } = useWebSocket(address);
-
-    // Combine matches from contract and websocket, removing duplicates
-    const allOpenMatches = [...contractMatches].map(match => ({
-        id: match.id,
-        playerA: match.playerA,
-        playerB: match.playerB,
+    // Process contract matches
+    const allOpenMatches = contractMatches.map(match => ({
+        id: match.id as `0x${string}`,
+        playerA: match.playerA as string,
+        playerB: match.playerB as string,
         stakeAmount: Number(formatUnits(match.stakeAmount, 6)),
         prizePool: Number(formatUnits(match.prizePool, 6)),
         duration: Number(match.duration),
         createdAt: Number(match.createdAt) * 1000,
-        status: match.status,
-        isOnChain: true,
-    }));
+        status: Number(match.status),
+    })).filter(match => match.status === 0); // 0 = Waiting
 
-    // Refetch after successful transactions
+    // Refetch after successful USDC transaction (approve/faucet)
     useEffect(() => {
         if (usdcSuccess) {
             refetchBalance();
             refetchAllowance();
+
+            // If we were trying to join a match after approval, now join it
+            if (joiningMatchId && allowance >= joiningStake) {
+                joinMatchOnChain(joiningMatchId as `0x${string}`);
+                setJoiningMatchId(null);
+                setJoiningStake(0);
+            }
+
             resetUSDC();
         }
     }, [usdcSuccess]);
 
+    // Refetch and redirect after successful match creation/join
     useEffect(() => {
-        if (matchSuccess) {
+        if (matchSuccess && matchHash) {
             refetchContractMatches();
             refetchBalance();
+
+            // Navigate to the match page
+            // For now, we'll go to a trading page
+            // The matchHash can be used to find the match ID
+            setTimeout(() => {
+                router.push(`/match/${matchHash}`);
+            }, 2000);
+
             resetMatch();
         }
-    }, [matchSuccess]);
+    }, [matchSuccess, matchHash]);
 
     // Auto-refresh contract matches every 5 seconds
     useEffect(() => {
@@ -87,27 +112,33 @@ export default function LobbyPage() {
             refetchContractMatches();
         }, 5000);
         return () => clearInterval(interval);
-    }, [refetchContractMatches]);
+    }, []);
 
-    const needsApproval = allowance < stakeAmount;
-    const hasEnoughBalance = usdcBalance >= stakeAmount;
+    const needsApproval = (amount: number) => allowance < amount;
+    const hasEnoughBalance = (amount: number) => usdcBalance >= amount;
 
     const handleCreateMatch = () => {
-        if (needsApproval) {
-            approve(stakeAmount * 10); // Approve extra for future matches
+        if (needsApproval(stakeAmount)) {
+            approve(stakeAmount * 10); // Approve extra for future
         } else {
             createMatchOnChain(stakeAmount, duration);
         }
     };
 
-    const handleJoinMatch = (matchId: string) => {
-        // First approve if needed, then join
-        if (needsApproval) {
-            approve(stakeAmount * 10);
+    const handleJoinMatch = (matchId: string, matchStake: number) => {
+        if (!hasEnoughBalance(matchStake)) {
+            alert('Insufficient USDC balance. Use the faucet to get test USDC.');
+            return;
+        }
+
+        if (needsApproval(matchStake)) {
+            // Save match info and approve first
+            setJoiningMatchId(matchId);
+            setJoiningStake(matchStake);
+            approve(matchStake * 10);
         } else {
-            // Join on-chain
-            // joinMatchOnChain(matchId as `0x${string}`);
-            console.log('Joining match:', matchId);
+            // Join directly
+            joinMatchOnChain(matchId as `0x${string}`);
         }
     };
 
@@ -129,6 +160,10 @@ export default function LobbyPage() {
         return `${hours}h ago`;
     };
 
+    const isMyMatch = (playerA: string) => {
+        return playerA.toLowerCase() === address?.toLowerCase();
+    };
+
     if (!isConnected) {
         return (
             <div className="min-h-screen flex items-center justify-center p-4">
@@ -148,13 +183,9 @@ export default function LobbyPage() {
                 <div className="text-center mb-8">
                     <h1 className="text-4xl font-bold mb-2">Battle Lobby</h1>
                     <p className="text-muted">Create a match or join an existing one</p>
-
-                    {/* Connection Status */}
                     <div className="flex items-center justify-center gap-2 mt-2">
-                        <span className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-yellow-500'}`} />
-                        <span className="text-xs text-muted">
-                            {wsConnected ? 'Live' : 'Connecting...'}
-                        </span>
+                        <span className="w-2 h-2 rounded-full bg-green-500" />
+                        <span className="text-xs text-muted">Live</span>
                     </div>
                 </div>
 
@@ -183,6 +214,15 @@ export default function LobbyPage() {
                     </Card>
                 </div>
 
+                {/* Transaction Status */}
+                {(matchPending || matchConfirming) && (
+                    <div className="mb-6 p-4 bg-primary/20 border border-primary rounded-xl text-center">
+                        <p className="font-semibold">
+                            {matchPending ? '⏳ Confirm transaction in your wallet...' : '⛓️ Transaction confirming...'}
+                        </p>
+                    </div>
+                )}
+
                 <div className="grid lg:grid-cols-3 gap-6">
                     {/* Create Match */}
                     <Card className="p-6">
@@ -209,7 +249,7 @@ export default function LobbyPage() {
                                 disabled={usdcPending || usdcConfirming}
                                 className="w-full mb-4 py-2 bg-blue-500/20 text-blue-500 rounded-xl hover:bg-blue-500/30 transition-colors text-sm disabled:opacity-50"
                             >
-                                {usdcPending || usdcConfirming ? 'Getting USDC...' : '🚰 Get Test USDC (1000 USDC)'}
+                                {usdcPending || usdcConfirming ? '⏳ Getting USDC...' : '🚰 Get Test USDC (1000 USDC)'}
                             </button>
                         )}
 
@@ -270,18 +310,16 @@ export default function LobbyPage() {
                         {/* Action Button */}
                         <Button
                             onClick={handleCreateMatch}
-                            disabled={!hasEnoughBalance || usdcPending || usdcConfirming || matchPending || matchConfirming}
+                            disabled={!hasEnoughBalance(stakeAmount) || usdcPending || usdcConfirming || matchPending || matchConfirming}
                             loading={usdcPending || usdcConfirming || matchPending || matchConfirming}
                             className="w-full"
                             size="lg"
                         >
-                            {!hasEnoughBalance
+                            {!hasEnoughBalance(stakeAmount)
                                 ? 'Insufficient Balance'
-                                : needsApproval
+                                : needsApproval(stakeAmount)
                                     ? 'Approve USDC'
-                                    : matchPending || matchConfirming
-                                        ? 'Creating Match...'
-                                        : 'Create Match'}
+                                    : 'Create Match'}
                         </Button>
                     </Card>
 
@@ -331,16 +369,26 @@ export default function LobbyPage() {
                                                 <p className="font-bold text-green-500">{formatUSD(match.prizePool)}</p>
                                             </div>
                                         </div>
-                                        <Button
-                                            onClick={() => handleJoinMatch(match.id)}
-                                            className="w-full"
-                                            size="sm"
-                                            disabled={match.playerA.toLowerCase() === address?.toLowerCase()}
-                                        >
-                                            {match.playerA.toLowerCase() === address?.toLowerCase()
-                                                ? 'Your Match'
-                                                : 'Join Battle ⚔️'}
-                                        </Button>
+
+                                        {isMyMatch(match.playerA) ? (
+                                            <div className="w-full py-2 bg-gray-500/20 text-gray-500 rounded-xl text-center text-sm">
+                                                Your Match - Waiting for opponent...
+                                            </div>
+                                        ) : (
+                                            <Button
+                                                onClick={() => handleJoinMatch(match.id, match.stakeAmount)}
+                                                className="w-full"
+                                                size="sm"
+                                                disabled={usdcPending || usdcConfirming || matchPending || matchConfirming || !hasEnoughBalance(match.stakeAmount)}
+                                                loading={joiningMatchId === match.id && (usdcPending || usdcConfirming || matchPending || matchConfirming)}
+                                            >
+                                                {!hasEnoughBalance(match.stakeAmount)
+                                                    ? 'Need More USDC'
+                                                    : needsApproval(match.stakeAmount)
+                                                        ? `Approve & Join (${formatUSD(match.stakeAmount)})`
+                                                        : `Join Battle ⚔️`}
+                                            </Button>
+                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -383,11 +431,6 @@ export default function LobbyPage() {
                                                 <p className="font-bold text-green-500">
                                                     {formatUSD(Number(player.earnings) / 1e6)}
                                                 </p>
-                                                <p className="text-xs text-muted">
-                                                    {Number(player.totalMatches) > 0
-                                                        ? `${((Number(player.wins) / Number(player.totalMatches)) * 100).toFixed(0)}% WR`
-                                                        : '0% WR'}
-                                                </p>
                                             </div>
                                         </div>
                                     ))}
@@ -395,7 +438,7 @@ export default function LobbyPage() {
                             )}
                         </Card>
 
-                        {/* Live Prices Full */}
+                        {/* Live Prices */}
                         <LivePrices />
                     </div>
                 </div>
