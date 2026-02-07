@@ -8,6 +8,7 @@ import { RainbowKitProvider, getDefaultConfig, darkTheme, lightTheme } from '@ra
 import { ThemeProvider, useTheme } from 'next-themes';
 import '@rainbow-me/rainbowkit/styles.css';
 
+// Create config outside component to avoid re-creation
 const config = getDefaultConfig({
     appName: 'FlashDuel',
     projectId: process.env.NEXT_PUBLIC_WALLET_CONNECT_ID || 'demo-project-id',
@@ -15,10 +16,18 @@ const config = getDefaultConfig({
     transports: {
         [sepolia.id]: http('https://ethereum-sepolia-rpc.publicnode.com'),
     },
-    ssr: true,
+    ssr: true, // Enable SSR mode
 });
 
-const queryClient = new QueryClient();
+// Create query client outside component
+const queryClient = new QueryClient({
+    defaultOptions: {
+        queries: {
+            staleTime: 5000,
+            refetchOnWindowFocus: false,
+        },
+    },
+});
 
 function RainbowKitWrapper({ children }: { children: ReactNode }) {
     const { resolvedTheme } = useTheme();
@@ -28,6 +37,7 @@ function RainbowKitWrapper({ children }: { children: ReactNode }) {
         setMounted(true);
     }, []);
 
+    // Prevent hydration mismatch
     if (!mounted) {
         return <>{children}</>;
     }
@@ -50,13 +60,24 @@ function RainbowKitWrapper({ children }: { children: ReactNode }) {
 }
 
 export function Providers({ children }: { children: ReactNode }) {
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
     return (
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
             <WagmiProvider config={config}>
                 <QueryClientProvider client={queryClient}>
-                    <RainbowKitWrapper>
-                        {children}
-                    </RainbowKitWrapper>
+                    {mounted ? (
+                        <RainbowKitWrapper>
+                            {children}
+                        </RainbowKitWrapper>
+                    ) : (
+                        // Show children without RainbowKit during SSR
+                        <>{children}</>
+                    )}
                 </QueryClientProvider>
             </WagmiProvider>
         </ThemeProvider>

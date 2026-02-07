@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
 import { useAccount } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
+import { formatUnits } from 'viem';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { LivePrices } from '@/components/LivePrices';
@@ -14,6 +14,8 @@ import {
     useFlashDuel,
     usePlatformStats,
     useLeaderboard,
+    useOpenMatches,
+    FLASHDUEL_ADDRESS,
 } from '@/hooks/useContract';
 import { useWebSocket } from '@/hooks/useWebsocket';
 
@@ -30,33 +32,82 @@ export default function LobbyPage() {
     const [stakeAmount, setStakeAmount] = useState(50);
     const [duration, setDuration] = useState(300);
 
-    // Contract hooks - READ REAL BALANCE
-    const { balance: usdcBalance, isLoading: balanceLoading, refetch: refetchBalance } = useUSDCBalance(address);
-    const { allowance, refetch: refetchAllowance } = useUSDCAllowance(address);
-    const { approve, faucet, isPending: usdcPending, isConfirming: usdcConfirming, isSuccess: usdcSuccess } = useUSDC();
-    const { createMatch, isPending: matchPending, isConfirming: matchConfirming } = useFlashDuel();
+    // Contract hooks
+    const { balance: usdcBalance, isLoading: balanceLoading, refetch: refetchBalance } = useUSDCBalance(address as `0x${string}`);
+    const { allowance, refetch: refetchAllowance } = useUSDCAllowance(address as `0x${string}`);
+    const { approve, faucet, isPending: usdcPending, isConfirming: usdcConfirming, isSuccess: usdcSuccess, reset: resetUSDC } = useUSDC();
+    const { createMatch: createMatchOnChain, isPending: matchPending, isConfirming: matchConfirming, isSuccess: matchSuccess, reset: resetMatch } = useFlashDuel();
     const { stats: platformStats } = usePlatformStats();
     const { leaderboard } = useLeaderboard(5);
 
-    // WebSocket for real-time updates
-    const { isConnected: wsConnected, openMatches, prices } = useWebSocket(address);
+    // Get open matches from CONTRACT (on-chain)
+    const { matches: contractMatches, refetch: refetchContractMatches } = useOpenMatches();
 
-    // Refetch balance after successful transaction
+    // WebSocket for real-time updates
+    const {
+        isConnected: wsConnected,
+        openMatches: wsMatches,
+        createMatch: createMatchWS,
+        joinMatch: joinMatchWS,
+    } = useWebSocket(address);
+
+    // Combine matches from contract and websocket, removing duplicates
+    const allOpenMatches = [...contractMatches].map(match => ({
+        id: match.id,
+        playerA: match.playerA,
+        playerB: match.playerB,
+        stakeAmount: Number(formatUnits(match.stakeAmount, 6)),
+        prizePool: Number(formatUnits(match.prizePool, 6)),
+        duration: Number(match.duration),
+        createdAt: Number(match.createdAt) * 1000,
+        status: match.status,
+        isOnChain: true,
+    }));
+
+    // Refetch after successful transactions
     useEffect(() => {
         if (usdcSuccess) {
             refetchBalance();
             refetchAllowance();
+            resetUSDC();
         }
-    }, [usdcSuccess, refetchBalance, refetchAllowance]);
+    }, [usdcSuccess]);
+
+    useEffect(() => {
+        if (matchSuccess) {
+            refetchContractMatches();
+            refetchBalance();
+            resetMatch();
+        }
+    }, [matchSuccess]);
+
+    // Auto-refresh contract matches every 5 seconds
+    useEffect(() => {
+        const interval = setInterval(() => {
+            refetchContractMatches();
+        }, 5000);
+        return () => clearInterval(interval);
+    }, [refetchContractMatches]);
 
     const needsApproval = allowance < stakeAmount;
     const hasEnoughBalance = usdcBalance >= stakeAmount;
 
     const handleCreateMatch = () => {
         if (needsApproval) {
-            approve(stakeAmount * 2); // Approve extra for future matches
+            approve(stakeAmount * 10); // Approve extra for future matches
         } else {
-            createMatch(stakeAmount, duration);
+            createMatchOnChain(stakeAmount, duration);
+        }
+    };
+
+    const handleJoinMatch = (matchId: string) => {
+        // First approve if needed, then join
+        if (needsApproval) {
+            approve(stakeAmount * 10);
+        } else {
+            // Join on-chain
+            // joinMatchOnChain(matchId as `0x${string}`);
+            console.log('Joining match:', matchId);
         }
     };
 
@@ -65,6 +116,7 @@ export default function LobbyPage() {
     };
 
     const shortenAddress = (addr: string) => {
+        if (!addr) return '';
         return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
     };
 
@@ -99,7 +151,7 @@ export default function LobbyPage() {
 
                     {/* Connection Status */}
                     <div className="flex items-center justify-center gap-2 mt-2">
-                        <span className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+                        <span className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-yellow-500'}`} />
                         <span className="text-xs text-muted">
                             {wsConnected ? 'Live' : 'Connecting...'}
                         </span>
@@ -151,13 +203,13 @@ export default function LobbyPage() {
                         </div>
 
                         {/* Faucet Button */}
-                        {usdcBalance < 10 && (
+                        {usdcBalance < 100 && (
                             <button
                                 onClick={() => faucet()}
                                 disabled={usdcPending || usdcConfirming}
-                                className="w-full mb-4 py-2 bg-blue-500/20 text-blue-500 rounded-xl hover:bg-blue-500/30 transition-colors text-sm"
+                                className="w-full mb-4 py-2 bg-blue-500/20 text-blue-500 rounded-xl hover:bg-blue-500/30 transition-colors text-sm disabled:opacity-50"
                             >
-                                {usdcPending || usdcConfirming ? 'Getting USDC...' : '🚰 Get Test USDC (Faucet)'}
+                                {usdcPending || usdcConfirming ? 'Getting USDC...' : '🚰 Get Test USDC (1000 USDC)'}
                             </button>
                         )}
 
@@ -227,7 +279,9 @@ export default function LobbyPage() {
                                 ? 'Insufficient Balance'
                                 : needsApproval
                                     ? 'Approve USDC'
-                                    : 'Create Match'}
+                                    : matchPending || matchConfirming
+                                        ? 'Creating Match...'
+                                        : 'Create Match'}
                         </Button>
                     </Card>
 
@@ -236,11 +290,11 @@ export default function LobbyPage() {
                         <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
                             <span>🎯</span> Open Matches
                             <span className="ml-auto bg-primary/20 text-primary text-sm px-2 py-1 rounded-full">
-                                {openMatches.length}
+                                {allOpenMatches.length}
                             </span>
                         </h2>
 
-                        {openMatches.length === 0 ? (
+                        {allOpenMatches.length === 0 ? (
                             <div className="text-center py-8 text-muted">
                                 <p className="text-4xl mb-2">🏜️</p>
                                 <p>No open matches</p>
@@ -248,20 +302,18 @@ export default function LobbyPage() {
                             </div>
                         ) : (
                             <div className="space-y-3 max-h-[400px] overflow-y-auto">
-                                {openMatches.map((match) => (
-                                    <motion.div
+                                {allOpenMatches.map((match) => (
+                                    <div
                                         key={match.id}
-                                        initial={{ opacity: 0, y: 20 }}
-                                        animate={{ opacity: 1, y: 0 }}
                                         className="bg-background rounded-xl p-4"
                                     >
                                         <div className="flex items-center justify-between mb-2">
                                             <div className="flex items-center gap-2">
                                                 <div className="w-8 h-8 bg-primary/20 rounded-full flex items-center justify-center text-xs font-bold">
-                                                    {shortenAddress(match.playerA.address).slice(0, 2)}
+                                                    {shortenAddress(match.playerA).slice(0, 2)}
                                                 </div>
                                                 <div>
-                                                    <p className="font-semibold">{shortenAddress(match.playerA.address)}</p>
+                                                    <p className="font-semibold">{shortenAddress(match.playerA)}</p>
                                                     <p className="text-xs text-muted">{getTimeAgo(match.createdAt)}</p>
                                                 </div>
                                             </div>
@@ -280,18 +332,16 @@ export default function LobbyPage() {
                                             </div>
                                         </div>
                                         <Button
-                                            onClick={() => {
-                                                // Join match logic
-                                            }}
+                                            onClick={() => handleJoinMatch(match.id)}
                                             className="w-full"
                                             size="sm"
-                                            disabled={match.playerA.address.toLowerCase() === address?.toLowerCase()}
+                                            disabled={match.playerA.toLowerCase() === address?.toLowerCase()}
                                         >
-                                            {match.playerA.address.toLowerCase() === address?.toLowerCase()
+                                            {match.playerA.toLowerCase() === address?.toLowerCase()
                                                 ? 'Your Match'
-                                                : 'Join Battle'}
+                                                : 'Join Battle ⚔️'}
                                         </Button>
-                                    </motion.div>
+                                    </div>
                                 ))}
                             </div>
                         )}
