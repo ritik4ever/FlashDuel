@@ -50,6 +50,13 @@ export const USDC_ABI = [
         inputs: [],
         outputs: [{ type: 'uint8' }],
     },
+    {
+        name: 'symbol',
+        type: 'function',
+        stateMutability: 'view',
+        inputs: [],
+        outputs: [{ type: 'string' }],
+    },
 ] as const;
 
 // FlashDuel ABI
@@ -155,32 +162,39 @@ export const FLASHDUEL_ABI = [
     },
 ] as const;
 
-// Hook to get REAL USDC balance from blockchain
+// ============================================
+// USDC BALANCE - READ FROM BLOCKCHAIN
+// ============================================
 export function useUSDCBalance(address: `0x${string}` | undefined) {
-    const { data, refetch, isLoading, isError } = useReadContract({
+    const { data, refetch, isLoading, isError, error } = useReadContract({
         address: USDC_ADDRESS,
         abi: USDC_ABI,
         functionName: 'balanceOf',
         args: address ? [address] : undefined,
         query: {
             enabled: !!address,
-            refetchInterval: 10000, // Refetch every 10 seconds
+            refetchInterval: 5000, // Refetch every 5 seconds
+            staleTime: 3000,
         },
     });
 
-    // USDC has 6 decimals
-    const balance = data ? Number(formatUnits(data, 6)) : 0;
+    // USDC has 6 decimals - convert from raw to human readable
+    const balanceRaw = data ?? BigInt(0);
+    const balance = Number(formatUnits(balanceRaw, 6));
 
     return {
-        balance,
-        balanceRaw: data || BigInt(0),
+        balance,          // Human readable (e.g., 100.50)
+        balanceRaw,       // Raw BigInt
         refetch,
         isLoading,
         isError,
+        error,
     };
 }
 
-// Hook to get USDC allowance
+// ============================================
+// USDC ALLOWANCE - CHECK APPROVAL
+// ============================================
 export function useUSDCAllowance(owner: `0x${string}` | undefined) {
     const { data, refetch, isLoading } = useReadContract({
         address: USDC_ADDRESS,
@@ -193,34 +207,41 @@ export function useUSDCAllowance(owner: `0x${string}` | undefined) {
         },
     });
 
+    const allowanceRaw = data ?? BigInt(0);
+    const allowance = Number(formatUnits(allowanceRaw, 6));
+
     return {
-        allowance: data ? Number(formatUnits(data, 6)) : 0,
-        allowanceRaw: data || BigInt(0),
+        allowance,
+        allowanceRaw,
         refetch,
         isLoading,
     };
 }
 
-// Hook for USDC operations (approve, faucet)
+// ============================================
+// USDC OPERATIONS - APPROVE & FAUCET
+// ============================================
 export function useUSDC() {
     const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
     const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
     const approve = (amount: number) => {
+        const amountInWei = parseUnits(amount.toString(), 6);
         writeContract({
             address: USDC_ADDRESS,
             abi: USDC_ABI,
             functionName: 'approve',
-            args: [FLASHDUEL_ADDRESS, parseUnits(amount.toString(), 6)],
+            args: [FLASHDUEL_ADDRESS, amountInWei],
         });
     };
 
     const approveMax = () => {
+        // Approve max uint256
         writeContract({
             address: USDC_ADDRESS,
             abi: USDC_ABI,
             functionName: 'approve',
-            args: [FLASHDUEL_ADDRESS, parseUnits('1000000', 6)], // Approve 1M USDC
+            args: [FLASHDUEL_ADDRESS, BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')],
         });
     };
 
@@ -245,17 +266,20 @@ export function useUSDC() {
     };
 }
 
-// Hook for FlashDuel contract operations
+// ============================================
+// FLASHDUEL CONTRACT OPERATIONS
+// ============================================
 export function useFlashDuel() {
     const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
     const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
     const createMatch = (stakeAmount: number, duration: number) => {
+        const stakeInWei = parseUnits(stakeAmount.toString(), 6);
         writeContract({
             address: FLASHDUEL_ADDRESS,
             abi: FLASHDUEL_ABI,
             functionName: 'createMatch',
-            args: [parseUnits(stakeAmount.toString(), 6), BigInt(duration)],
+            args: [stakeInWei, BigInt(duration)],
         });
     };
 
@@ -290,14 +314,16 @@ export function useFlashDuel() {
     };
 }
 
-// Hook to get open matches from contract
+// ============================================
+// READ CONTRACT DATA
+// ============================================
 export function useOpenMatches() {
     const { data, refetch, isLoading, isError } = useReadContract({
         address: FLASHDUEL_ADDRESS,
         abi: FLASHDUEL_ABI,
         functionName: 'getOpenMatches',
         query: {
-            refetchInterval: 5000, // Refresh every 5 seconds
+            refetchInterval: 5000,
         },
     });
 
@@ -309,7 +335,6 @@ export function useOpenMatches() {
     };
 }
 
-// Hook to get leaderboard
 export function useLeaderboard(limit: number = 10) {
     const { data, refetch, isLoading } = useReadContract({
         address: FLASHDUEL_ADDRESS,
@@ -317,18 +342,17 @@ export function useLeaderboard(limit: number = 10) {
         functionName: 'getLeaderboard',
         args: [BigInt(limit)],
         query: {
-            refetchInterval: 30000, // Refresh every 30 seconds
+            refetchInterval: 30000,
         },
     });
 
     return {
         leaderboard: data || [],
         refetch,
-        isLoading
+        isLoading,
     };
 }
 
-// Hook to get player stats
 export function usePlayerStats(address: `0x${string}` | undefined) {
     const { data, refetch, isLoading } = useReadContract({
         address: FLASHDUEL_ADDRESS,
@@ -344,11 +368,10 @@ export function usePlayerStats(address: `0x${string}` | undefined) {
     return {
         stats: data,
         refetch,
-        isLoading
+        isLoading,
     };
 }
 
-// Hook to get platform stats
 export function usePlatformStats() {
     const { data, refetch, isLoading } = useReadContract({
         address: FLASHDUEL_ADDRESS,
@@ -360,12 +383,14 @@ export function usePlatformStats() {
     });
 
     return {
-        stats: data ? {
-            totalMatches: Number(data[0]),
-            totalPrizePool: Number(formatUnits(data[1], 6)),
-            totalFees: Number(formatUnits(data[2], 6)),
-            totalPlayers: Number(data[3]),
-        } : null,
+        stats: data
+            ? {
+                totalMatches: Number(data[0]),
+                totalPrizePool: Number(formatUnits(data[1], 6)),
+                totalFees: Number(formatUnits(data[2], 6)),
+                totalPlayers: Number(data[3]),
+            }
+            : null,
         refetch,
         isLoading,
     };

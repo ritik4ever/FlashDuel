@@ -1,0 +1,93 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build
+dist/
+.next/
+out/
+build/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Hardhat
+artifacts/
+cache/
+typechain-types/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Testing
+coverage/
+```
+
+---
+
+## **Complete Project Structure**
+```
+flashduel/
+├── contracts/
+│   ├── FlashDuel.sol
+│   ├── MockUSDC.sol
+│   ├── scripts/
+│   │   └── deploy.ts
+│   ├── hardhat.config.ts
+│   └── package.json
+├── frontend/
+│   ├── app/
+│   │   ├── layout.tsx
+│   │   ├── page.tsx
+│   │   ├── globals.css
+│   │   ├── providers.tsx
+│   │   ├── lobby/
+│   │   │   └── page.tsx
+│   │   └── match/
+│   │       └── [matchId]/
+│   │           └── page.tsx
+│   ├── components/
+│   │   ├── ui/
+│   │   │   ├── Button.tsx
+│   │   │   ├── Card.tsx
+│   │   │   ├── Badge.tsx
+│   │   │   ├── Slider.tsx
+│   │   │   └── Modal.tsx
+│   │   ├── wallet/
+│   │   │   └── ConnectButton.tsx
+│   │   └── layout/
+│   │       └── Navbar.tsx
+│   ├── hooks/
+│   │   ├── useWebSocket.ts
+│   │   ├── useYellowSession.ts
+│   │   └── usePrices.ts
+│   ├── lib/
+│   │   ├── store.ts
+│   │   ├── constants.ts
+│   │   └── utils.ts
+│   ├── .env.local
+│   ├── next.config.js
+│   ├── postcss.config.js
+│   ├── tailwind.config.ts
+│   ├── tsconfig.json
+│   └── package.json
+├── backend/
+│   ├── server.ts
+│   ├── tsconfig.json
+│   └── package.json
+├── .gitignore
+└── README.md
