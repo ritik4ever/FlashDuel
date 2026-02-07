@@ -1,46 +1,8 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
-import { createPublicClient, createWalletClient, http, parseUnits } from 'viem';
-import { sepolia } from 'viem/chains';
-import { privateKeyToAccount } from 'viem/accounts';
 
 const PORT = 3001;
 const wss = new WebSocketServer({ port: PORT });
-
-// Contract addresses (update after deployment)
-const FLASHDUEL_ADDRESS = process.env.FLASHDUEL_ADDRESS as `0x${string}`;
-const PRIVATE_KEY = process.env.SETTLER_PRIVATE_KEY as `0x${string}`;
-
-const FLASHDUEL_ABI = [
-    {
-        name: 'settleMatch',
-        type: 'function',
-        stateMutability: 'nonpayable',
-        inputs: [
-            { name: 'matchId', type: 'bytes32' },
-            { name: 'winner', type: 'address' },
-            { name: 'playerAScore', type: 'int256' },
-            { name: 'playerBScore', type: 'int256' },
-        ],
-        outputs: [],
-    },
-] as const;
-
-// Setup viem clients for contract interaction
-const publicClient = createPublicClient({
-    chain: sepolia,
-    transport: http(),
-});
-
-let walletClient: any = null;
-if (PRIVATE_KEY) {
-    const account = privateKeyToAccount(PRIVATE_KEY);
-    walletClient = createWalletClient({
-        account,
-        chain: sepolia,
-        transport: http(),
-    });
-}
 
 interface Player {
     ws: WebSocket;
@@ -69,6 +31,12 @@ interface Match {
     winner: string | null;
     playerAScore: number;
     playerBScore: number;
+}
+
+interface PriceData {
+    ethereum?: { usd: number };
+    bitcoin?: { usd: number };
+    solana?: { usd: number };
 }
 
 const players: Map<string, Player> = new Map();
@@ -110,49 +78,20 @@ function calculatePortfolioValue(portfolio: Portfolio, prices: { [key: string]: 
     return value;
 }
 
-async function settleMatchOnChain(match: Match, prices: { [key: string]: number }): Promise<void> {
-    if (!walletClient || !match.onChainId) {
-        console.log('Cannot settle on-chain: missing wallet client or onChainId');
-        return;
-    }
-
+async function fetchPrices(): Promise<{ [key: string]: number }> {
     try {
-        const playerAValue = calculatePortfolioValue(match.portfolioA, prices);
-        const playerBValue = calculatePortfolioValue(match.portfolioB, prices);
-
-        const winner = playerAValue >= playerBValue ? match.playerA : match.playerB;
-        const playerAScore = Math.round((playerAValue - match.stakeAmount) * 100);
-        const playerBScore = Math.round((playerBValue - match.stakeAmount) * 100);
-
-        console.log(`Settling match ${match.id} on-chain...`);
-        console.log(`Winner: ${winner}`);
-        console.log(`Player A Score: ${playerAScore}, Player B Score: ${playerBScore}`);
-
-        const hash = await walletClient.writeContract({
-            address: FLASHDUEL_ADDRESS,
-            abi: FLASHDUEL_ABI,
-            functionName: 'settleMatch',
-            args: [
-                match.onChainId as `0x${string}`,
-                winner as `0x${string}`,
-                BigInt(playerAScore),
-                BigInt(playerBScore),
-            ],
-        });
-
-        console.log(`Settlement tx: ${hash}`);
-
-        const receipt = await publicClient.waitForTransactionReceipt({ hash });
-        console.log(`Settlement confirmed in block ${receipt.blockNumber}`);
-
-        match.winner = winner;
-        match.playerAScore = playerAScore;
-        match.playerBScore = playerBScore;
-        match.status = 'completed';
-
+        const res = await fetch(
+            'https://api.coingecko.com/api/v3/simple/price?ids=ethereum,bitcoin,solana&vs_currencies=usd'
+        );
+        const data = await res.json() as PriceData;  // Add type assertion here
+        return {
+            eth: data.ethereum?.usd || 3000,
+            btc: data.bitcoin?.usd || 95000,
+            sol: data.solana?.usd || 200,
+        };
     } catch (error) {
-        console.error('Failed to settle on-chain:', error);
-        match.status = 'completed';
+        console.error('Error fetching prices:', error);
+        return { eth: 3000, btc: 95000, sol: 200 };
     }
 }
 
@@ -183,7 +122,7 @@ wss.on('connection', (ws: WebSocket) => {
 
                     const match: Match = {
                         id: uuidv4(),
-                        onChainId: message.onChainId,
+                        onChainId: message.onChainId || null,
                         playerA: playerAddress,
                         playerB: null,
                         stakeAmount: message.stakeAmount,
@@ -207,6 +146,37 @@ wss.on('connection', (ws: WebSocket) => {
 
                     sendTo(playerAddress, { type: 'match_created', match });
                     broadcast({ type: 'matches', matches: getOpenMatches() });
+                    console.log(`Match created: ${match.id} by ${playerAddress}`);
+                    break;
+                }
+
+                case 'create_match': {
+                    if (!playerAddress) return;
+
+                    const match: Match = {
+                        id: uuidv4(),
+                        onChainId: null,
+                        playerA: playerAddress,
+                        playerB: null,
+                        stakeAmount: message.stakeAmount,
+                        prizePool: message.stakeAmount * 2,
+                        duration: message.duration,
+                        status: 'waiting',
+                        startedAt: 0,
+                        createdAt: Date.now(),
+                        portfolioA: createPortfolio(message.stakeAmount),
+                        portfolioB: createPortfolio(message.stakeAmount),
+                        assets: message.assets || ['eth', 'btc', 'sol'],
+                        winner: null,
+                        playerAScore: 0,
+                        playerBScore: 0,
+                    };
+
+                    matches.set(match.id, match);
+
+                    sendTo(playerAddress, { type: 'match_created', match });
+                    broadcast({ type: 'matches', matches: getOpenMatches() });
+                    console.log(`Match created: ${match.id} by ${playerAddress}`);
                     break;
                 }
 
@@ -227,7 +197,31 @@ wss.on('connection', (ws: WebSocket) => {
                     sendTo(playerAddress, { type: 'match_joined', match });
                     broadcast({ type: 'matches', matches: getOpenMatches() });
 
-                    // Set timer to end match
+                    console.log(`Match ${match.id} started: ${match.playerA} vs ${playerAddress}`);
+
+                    setTimeout(async () => {
+                        await endMatch(match.id);
+                    }, match.duration * 1000);
+                    break;
+                }
+
+                case 'join_match': {
+                    if (!playerAddress) return;
+
+                    const match = matches.get(message.matchId);
+                    if (!match || match.status !== 'waiting') return;
+                    if (match.playerA === playerAddress) return;
+
+                    match.playerB = playerAddress;
+                    match.status = 'active';
+                    match.startedAt = Date.now();
+
+                    sendTo(match.playerA, { type: 'match_started', match });
+                    sendTo(playerAddress, { type: 'match_joined', match });
+                    broadcast({ type: 'matches', matches: getOpenMatches() });
+
+                    console.log(`Match ${match.id} started: ${match.playerA} vs ${playerAddress}`);
+
                     setTimeout(async () => {
                         await endMatch(match.id);
                     }, match.duration * 1000);
@@ -247,20 +241,34 @@ wss.on('connection', (ws: WebSocket) => {
                     const cost = quantity * price;
 
                     if (action === 'buy') {
-                        if (portfolio.usdc < cost) return;
+                        if (portfolio.usdc < cost) {
+                            sendTo(playerAddress, { type: 'trade_error', message: 'Insufficient USDC' });
+                            return;
+                        }
                         portfolio.usdc -= cost;
                         portfolio.assets[asset] = (portfolio.assets[asset] || 0) + quantity;
                     } else {
-                        if ((portfolio.assets[asset] || 0) < quantity) return;
+                        if ((portfolio.assets[asset] || 0) < quantity) {
+                            sendTo(playerAddress, { type: 'trade_error', message: 'Insufficient asset' });
+                            return;
+                        }
                         portfolio.assets[asset] -= quantity;
                         portfolio.usdc += cost;
                     }
+
+                    console.log(`Trade: ${playerAddress} ${action} ${quantity} ${asset} @ ${price}`);
 
                     sendTo(playerAddress, { type: 'trade_executed', portfolio });
                     sendTo(match.playerA, { type: 'match_update', match });
                     if (match.playerB) {
                         sendTo(match.playerB, { type: 'match_update', match });
                     }
+                    break;
+                }
+
+                case 'get_prices': {
+                    const prices = await fetchPrices();
+                    ws.send(JSON.stringify({ type: 'prices', prices }));
                     break;
                 }
             }
@@ -282,37 +290,52 @@ async function endMatch(matchId: string): Promise<void> {
     if (!match || match.status !== 'active') return;
 
     match.status = 'settling';
+    console.log(`Match ${matchId} ending...`);
 
-    // Fetch current prices
-    try {
-        const res = await fetch(
-            'https://api.coingecko.com/api/v3/simple/price?ids=ethereum,bitcoin,solana&vs_currencies=usd'
-        );
-        const data = await res.json();
-        const prices = {
-            eth: data.ethereum?.usd || 3000,
-            btc: data.bitcoin?.usd || 95000,
-            sol: data.solana?.usd || 200,
-        };
+    const prices = await fetchPrices();
 
-        // Settle on-chain
-        await settleMatchOnChain(match, prices);
+    const playerAValue = calculatePortfolioValue(match.portfolioA, prices);
+    const playerBValue = calculatePortfolioValue(match.portfolioB, prices);
 
-    } catch (error) {
-        console.error('Error fetching prices:', error);
-        // Fallback: settle without on-chain
-        const valueA = match.portfolioA.usdc;
-        const valueB = match.portfolioB.usdc;
-        match.winner = valueA >= valueB ? match.playerA : match.playerB;
-        match.status = 'completed';
+    match.playerAScore = Math.round((playerAValue - match.stakeAmount) * 100);
+    match.playerBScore = Math.round((playerBValue - match.stakeAmount) * 100);
+
+    if (playerAValue >= playerBValue) {
+        match.winner = match.playerA;
+    } else {
+        match.winner = match.playerB;
     }
 
-    sendTo(match.playerA, { type: 'match_ended', match });
+    match.status = 'completed';
+
+    console.log(`Match ${matchId} ended.`);
+    console.log(`  Player A (${match.playerA}): $${playerAValue.toFixed(2)} (score: ${match.playerAScore})`);
+    console.log(`  Player B (${match.playerB}): $${playerBValue.toFixed(2)} (score: ${match.playerBScore})`);
+    console.log(`  Winner: ${match.winner}`);
+
+    const result = {
+        type: 'match_ended',
+        match,
+        prices,
+        playerAValue,
+        playerBValue,
+    };
+
+    sendTo(match.playerA, result);
     if (match.playerB) {
-        sendTo(match.playerB, { type: 'match_ended', match });
+        sendTo(match.playerB, result);
     }
-
-    console.log(`Match ${matchId} ended. Winner: ${match.winner}`);
 }
 
-console.log(`WebSocket server running on port ${PORT}`);
+// Periodic price broadcast
+setInterval(async () => {
+    const prices = await fetchPrices();
+    broadcast({ type: 'prices', prices });
+}, 10000);
+
+console.log(`
+╔═══════════════════════════════════════════╗
+║     FlashDuel WebSocket Server            ║
+║     Running on port ${PORT}                   ║
+╚═══════════════════════════════════════════╝
+`);

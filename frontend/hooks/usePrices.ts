@@ -1,49 +1,100 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { ASSETS } from '@/lib/constants';
+import { useState, useEffect, useCallback } from 'react';
+import { fetchPrices, fetchDetailedPrices, type Prices, type DetailedPrices } from '@/lib/prices/coingecko';
 
-interface PriceData {
-    [key: string]: number;
+export interface UsePricesReturn {
+    prices: Prices;
+    detailedPrices: DetailedPrices | null;
+    isLoading: boolean;
+    error: string | null;
+    lastUpdated: number | null;
+    refresh: () => Promise<void>;
 }
 
-export function usePrices() {
-    const [prices, setPrices] = useState<PriceData>({});
-    const [priceChanges, setPriceChanges] = useState<PriceData>({});
-    const prevPrices = useRef<PriceData>({});
+const DEFAULT_PRICES: Prices = {
+    eth: 3000,
+    btc: 95000,
+    sol: 200,
+};
+
+const REFRESH_INTERVAL = 10000; // 10 seconds
+
+export function usePrices(autoRefresh: boolean = true): UsePricesReturn {
+    const [prices, setPrices] = useState<Prices>(DEFAULT_PRICES);
+    const [detailedPrices, setDetailedPrices] = useState<DetailedPrices | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+
+    const refresh = useCallback(async () => {
+        try {
+            setError(null);
+            const [simplePrices, detailed] = await Promise.all([
+                fetchPrices(),
+                fetchDetailedPrices(),
+            ]);
+
+            setPrices(simplePrices);
+            setDetailedPrices(detailed);
+            setLastUpdated(Date.now());
+        } catch (err) {
+            console.error('Error fetching prices:', err);
+            setError('Failed to fetch prices');
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
+    // Initial fetch
+    useEffect(() => {
+        refresh();
+    }, [refresh]);
+
+    // Auto-refresh
+    useEffect(() => {
+        if (!autoRefresh) return;
+
+        const interval = setInterval(refresh, REFRESH_INTERVAL);
+        return () => clearInterval(interval);
+    }, [autoRefresh, refresh]);
+
+    return {
+        prices,
+        detailedPrices,
+        isLoading,
+        error,
+        lastUpdated,
+        refresh,
+    };
+}
+
+// Hook for WebSocket-based price updates (from backend)
+export function useWebSocketPrices(): Prices {
+    const [prices, setPrices] = useState<Prices>(DEFAULT_PRICES);
 
     useEffect(() => {
-        const fetchPrices = async () => {
+        const ws = new WebSocket(process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001');
+
+        ws.onopen = () => {
+            ws.send(JSON.stringify({ type: 'get_prices' }));
+        };
+
+        ws.onmessage = (event) => {
             try {
-                const ids = Object.values(ASSETS).map(a => a.coingeckoId).join(',');
-                const res = await fetch(
-                    `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`
-                );
-                const data = await res.json();
-
-                const newPrices: PriceData = {};
-                const newChanges: PriceData = {};
-
-                Object.entries(ASSETS).forEach(([key, asset]) => {
-                    const priceData = data[asset.coingeckoId];
-                    if (priceData) {
-                        newPrices[key] = priceData.usd;
-                        newChanges[key] = priceData.usd_24h_change || 0;
-                    }
-                });
-
-                prevPrices.current = prices;
-                setPrices(newPrices);
-                setPriceChanges(newChanges);
-            } catch (error) {
-                console.error('Failed to fetch prices:', error);
+                const data = JSON.parse(event.data);
+                if (data.type === 'prices') {
+                    setPrices(data.prices);
+                }
+            } catch (err) {
+                console.error('Error parsing price message:', err);
             }
         };
 
-        fetchPrices();
-        const interval = setInterval(fetchPrices, 10000);
-        return () => clearInterval(interval);
+        return () => {
+            ws.close();
+        };
     }, []);
 
-    return { prices, priceChanges };
+    return prices;
 }
