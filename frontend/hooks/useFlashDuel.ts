@@ -4,18 +4,35 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { formatUnits, parseUnits } from 'viem';
 
-
-// CONTRACT ADDRESSES (deployed contracts on Sepolia)
-
+// ============================================
+// CONTRACT ADDRESSES (Your deployed contracts on Sepolia)
+// ============================================
 const USDC_ADDRESS = '0x9FA9F632F2b6afCbb112Ee53D2638202EfE9B71A' as const;
 const FLASHDUEL_ADDRESS = '0x7c1d47ED0aFC7efCc2d6592b7Da3D838D97A00B4' as const;
 
-
+// ============================================
 // BACKEND URL
-
+// ============================================
 const BACKEND_WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
 
+// ============================================
+// Contract MatchStatus enum mapping
+// From your Solidity contract:
+// enum MatchStatus { None, Waiting, Active, Completed, Cancelled, Disputed }
+// None = 0, Waiting = 1, Active = 2, Completed = 3, Cancelled = 4, Disputed = 5
+// ============================================
+const MATCH_STATUS = {
+    NONE: 0,
+    WAITING: 1,
+    ACTIVE: 2,
+    COMPLETED: 3,
+    CANCELLED: 4,
+    DISPUTED: 5,
+} as const;
 
+// ============================================
+// ABIs (Minimal)
+// ============================================
 const USDC_ABI = [
     {
         name: 'balanceOf',
@@ -72,6 +89,13 @@ const FLASHDUEL_ABI = [
         outputs: [],
     },
     {
+        name: 'cancelMatch',
+        type: 'function',
+        stateMutability: 'nonpayable',
+        inputs: [{ name: 'matchId', type: 'bytes32' }],
+        outputs: [],
+    },
+    {
         name: 'getOpenMatches',
         type: 'function',
         stateMutability: 'view',
@@ -98,20 +122,48 @@ const FLASHDUEL_ABI = [
         ],
     },
     {
+        name: 'getMatch',
+        type: 'function',
+        stateMutability: 'view',
+        inputs: [{ name: 'matchId', type: 'bytes32' }],
+        outputs: [
+            {
+                type: 'tuple',
+                components: [
+                    { name: 'id', type: 'bytes32' },
+                    { name: 'playerA', type: 'address' },
+                    { name: 'playerB', type: 'address' },
+                    { name: 'stakeAmount', type: 'uint256' },
+                    { name: 'prizePool', type: 'uint256' },
+                    { name: 'createdAt', type: 'uint256' },
+                    { name: 'startedAt', type: 'uint256' },
+                    { name: 'endedAt', type: 'uint256' },
+                    { name: 'duration', type: 'uint256' },
+                    { name: 'status', type: 'uint8' },
+                    { name: 'winner', type: 'address' },
+                    { name: 'playerAScore', type: 'int256' },
+                    { name: 'playerBScore', type: 'int256' },
+                ],
+            },
+        ],
+    },
+    {
         name: 'getPlatformStats',
         type: 'function',
         stateMutability: 'view',
         inputs: [],
         outputs: [
-            { name: '', type: 'uint256' },
-            { name: '', type: 'uint256' },
-            { name: '', type: 'uint256' },
-            { name: '', type: 'uint256' },
+            { name: '_totalMatches', type: 'uint256' },
+            { name: '_totalPrizePool', type: 'uint256' },
+            { name: '_totalPlayers', type: 'uint256' },
+            { name: '_totalFees', type: 'uint256' },
         ],
     },
 ] as const;
 
-
+// ============================================
+// TYPES (exported for use in other files)
+// ============================================
 export interface Portfolio {
     usdc: number;
     eth: number;
@@ -146,7 +198,9 @@ export interface PlatformStats {
     totalFees: number;
 }
 
-
+// ============================================
+// HELPER FUNCTION (exported)
+// ============================================
 export function calculatePortfolioValue(portfolio: Portfolio, prices: Prices): number {
     return (
         portfolio.usdc +
@@ -156,7 +210,9 @@ export function calculatePortfolioValue(portfolio: Portfolio, prices: Prices): n
     );
 }
 
-
+// ============================================
+// MAIN HOOK
+// ============================================
 export function useFlashDuel() {
     const { address, isConnected } = useAccount();
 
@@ -169,7 +225,9 @@ export function useFlashDuel() {
     // WebSocket ref
     const wsRef = useRef<WebSocket | null>(null);
 
-
+    // ============================================
+    // CONTRACT READS
+    // ============================================
     const { data: balanceData, refetch: refetchBalance } = useReadContract({
         address: USDC_ADDRESS,
         abi: USDC_ABI,
@@ -186,7 +244,9 @@ export function useFlashDuel() {
         query: { enabled: !!address, refetchInterval: 5000 },
     });
 
-    const { data: openMatchesData, refetch: refetchMatches } = useReadContract({
+    // getOpenMatches already filters for Waiting status in the contract
+    // So we don't need to filter again!
+    const { data: openMatchesData, refetch: refetchMatches, isLoading: isLoadingMatches } = useReadContract({
         address: FLASHDUEL_ADDRESS,
         abi: FLASHDUEL_ABI,
         functionName: 'getOpenMatches',
@@ -200,31 +260,56 @@ export function useFlashDuel() {
         query: { refetchInterval: 10000 },
     });
 
-
+    // ============================================
+    // CONTRACT WRITES
+    // ============================================
     const { writeContract, data: txHash, isPending, reset: resetTx } = useWriteContract();
     const { isLoading: isConfirming, isSuccess: txSuccess } = useWaitForTransactionReceipt({
         hash: txHash,
     });
 
-
+    // ============================================
+    // COMPUTED VALUES
+    // ============================================
     const balance = balanceData ? Number(formatUnits(balanceData, 6)) : 0;
     const allowance = allowanceData ? Number(formatUnits(allowanceData, 6)) : 0;
 
-    const openMatches: Match[] = (openMatchesData || [])
-        .filter((m: any) => Number(m.status) === 0) // Status 0 = Waiting
-        .map((m: any) => ({
-            id: m.id,
-            playerA: m.playerA,
-            playerB: m.playerB === '0x0000000000000000000000000000000000000000' ? null : m.playerB,
-            stakeAmount: Number(formatUnits(m.stakeAmount, 6)),
-            prizePool: Number(formatUnits(m.prizePool, 6)),
-            duration: Number(m.duration),
-            status: 'waiting' as const,
-            startedAt: Number(m.startedAt) * 1000,
-            portfolioA: { usdc: Number(formatUnits(m.stakeAmount, 6)), eth: 0, btc: 0, sol: 0 },
-            portfolioB: { usdc: Number(formatUnits(m.stakeAmount, 6)), eth: 0, btc: 0, sol: 0 },
-            winner: null,
-        }));
+    // DEBUG: Log raw data from contract
+    useEffect(() => {
+        console.log('[DEBUG] Raw openMatchesData:', openMatchesData);
+        if (openMatchesData && Array.isArray(openMatchesData)) {
+            console.log('[DEBUG] Number of matches from getOpenMatches:', openMatchesData.length);
+            openMatchesData.forEach((m: any, i: number) => {
+                console.log(`[DEBUG] Match ${i}:`, {
+                    id: m.id,
+                    playerA: m.playerA,
+                    status: Number(m.status),
+                    stakeAmount: m.stakeAmount?.toString(),
+                });
+            });
+        }
+    }, [openMatchesData]);
+
+    // The contract's getOpenMatches already returns only Waiting matches
+    // So we just map them without filtering
+    const openMatches: Match[] = (openMatchesData || []).map((m: any) => ({
+        id: m.id,
+        playerA: m.playerA,
+        playerB: m.playerB === '0x0000000000000000000000000000000000000000' ? null : m.playerB,
+        stakeAmount: Number(formatUnits(m.stakeAmount, 6)),
+        prizePool: Number(formatUnits(m.prizePool, 6)),
+        duration: Number(m.duration),
+        status: 'waiting' as const,
+        startedAt: Number(m.startedAt) * 1000,
+        portfolioA: { usdc: Number(formatUnits(m.stakeAmount, 6)), eth: 0, btc: 0, sol: 0 },
+        portfolioB: { usdc: Number(formatUnits(m.stakeAmount, 6)), eth: 0, btc: 0, sol: 0 },
+        winner: null,
+    }));
+
+    // DEBUG: Log processed matches
+    useEffect(() => {
+        console.log('[DEBUG] Processed openMatches:', openMatches);
+    }, [openMatches]);
 
     const platformStats: PlatformStats = platformStatsData
         ? {
@@ -235,7 +320,9 @@ export function useFlashDuel() {
         }
         : { totalMatches: 0, totalPrizePool: 0, totalPlayers: 0, totalFees: 0 };
 
-
+    // ============================================
+    // WEBSOCKET CONNECTION (for real-time trading)
+    // ============================================
     const connectWebSocket = useCallback(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
@@ -336,7 +423,9 @@ export function useFlashDuel() {
         [address]
     );
 
-
+    // ============================================
+    // ACTIONS
+    // ============================================
 
     const approveUSDC = useCallback(
         (amount: number) => {
@@ -360,10 +449,16 @@ export function useFlashDuel() {
 
     const createMatch = useCallback(
         (stakeAmount: number, duration: number) => {
+            console.log('[createMatch] Creating with stake:', stakeAmount, 'duration:', duration);
+            console.log('[createMatch] Current allowance:', allowance);
+
             if (allowance < stakeAmount) {
+                console.log('[createMatch] Need approval first');
                 approveUSDC(stakeAmount);
                 return;
             }
+
+            console.log('[createMatch] Calling contract...');
             writeContract({
                 address: FLASHDUEL_ADDRESS,
                 abi: FLASHDUEL_ABI,
@@ -388,6 +483,18 @@ export function useFlashDuel() {
             });
         },
         [allowance, writeContract, approveUSDC]
+    );
+
+    const cancelMatch = useCallback(
+        (matchId: string) => {
+            writeContract({
+                address: FLASHDUEL_ADDRESS,
+                abi: FLASHDUEL_ABI,
+                functionName: 'cancelMatch',
+                args: [matchId as `0x${string}`],
+            });
+        },
+        [writeContract]
     );
 
     const executeTrade = useCallback(
@@ -449,7 +556,9 @@ export function useFlashDuel() {
         }
     }, []);
 
-
+    // ============================================
+    // EFFECTS
+    // ============================================
 
     // Connect WebSocket when address changes
     useEffect(() => {
@@ -486,6 +595,7 @@ export function useFlashDuel() {
     // Refetch after successful tx
     useEffect(() => {
         if (txSuccess) {
+            console.log('[TX] Success! Refetching data...');
             refetchBalance();
             refetchAllowance();
             refetchMatches();
@@ -505,17 +615,20 @@ export function useFlashDuel() {
         platformStats,
         wsConnected,
         error,
+        isLoadingMatches,
 
         // Transaction state
         isPending,
         isConfirming,
         txSuccess,
+        txHash,
 
         // Actions
         approveUSDC,
         requestFaucet,
         createMatch,
         joinMatch,
+        cancelMatch,
         executeTrade,
         joinMatchRoom,
         setCurrentMatch,
