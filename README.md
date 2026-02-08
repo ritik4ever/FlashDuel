@@ -51,7 +51,7 @@ Wallet address = player identity. No profiles needed for MVP.
 
 ---
 
-## 🧾 Deployed Contracts (Sepolia)
+##  Deployed Contracts (Sepolia)
 
 **Mock USDC (USDC)**
 
@@ -68,7 +68,7 @@ Network: **Sepolia Ethereum**
 
 ---
 
-## 🛠 Tech Stack
+## Tech Stack
 
 * **Frontend:** Next.js 14, React, Tailwind CSS
 * **Wallet:** RainbowKit, wagmi, viem
@@ -79,7 +79,7 @@ Network: **Sepolia Ethereum**
 
 ---
 
-## 🏗 Architecture (High Level)
+##  Architecture (High Level)
 
 * Funds are deposited once and secured via smart contracts
 * Matches and trades run **off‑chain using Yellow Network’s Nitrolite SDK**
@@ -89,7 +89,7 @@ Network: **Sepolia Ethereum**
 
 ---
 
-## 🏆 Why It Works for Hackathons
+##  Why It Works for Hackathons
 
 * Real money escrow (not paper trading)
 * Multiplayer, real‑time gameplay
@@ -97,9 +97,9 @@ Network: **Sepolia Ethereum**
 * Clear winner logic
 * Strong Web3 + infra story
 
----
+-
 
-## 📌 Status
+##  Status
 
 * Contracts deployed on Sepolia
 * Lobby + trading arena live
@@ -108,7 +108,7 @@ Network: **Sepolia Ethereum**
 
 ---
 
-## 👤 Team
+
 
 **Ritik** — Full‑Stack & Web3 Developer
 GitHub: [https://github.com/ritik4ever](https://github.com/ritik4ever)
