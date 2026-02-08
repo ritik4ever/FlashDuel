@@ -1,4 +1,4 @@
-# ⚔️ FlashDuel — 1v1 Crypto Trading Battles
+#  FlashDuel — 1v1 Crypto Trading Battles
 
 **ETHGlobal 2025 | Powered by Yellow Network**
 
@@ -8,7 +8,7 @@ No gas during gameplay. Trades are instant. Settlement is trustless.
 
 ---
 
-## 🚀 What is FlashDuel?
+## What is FlashDuel?
 
 * Create or join a 1v1 match
 * Both players stake **equal USDC**
@@ -18,9 +18,9 @@ No gas during gameplay. Trades are instant. Settlement is trustless.
 
 Wallet address = player identity. No profiles needed for MVP.
 
----
 
-## ⚡ Why It’s Different
+
+##  Why It’s Different
 
 * **Instant trades** (real‑time updates)
 * **Zero gas while trading**
@@ -30,7 +30,7 @@ Wallet address = player identity. No profiles needed for MVP.
 
 ---
 
-## 🎮 Game Flow (Simple)
+##  Game Flow (Simple)
 
 1. Player A creates a match (stakes USDC)
 2. Player B joins the match (same stake)
@@ -41,7 +41,7 @@ Wallet address = player identity. No profiles needed for MVP.
 
 ---
 
-## 🧠 How Trading Works
+##  How Trading Works
 
 * Both players start with identical USDC
 * Buy / sell at real‑time prices
@@ -55,13 +55,13 @@ Wallet address = player identity. No profiles needed for MVP.
 
 **Mock USDC (USDC)**
 
-* Address: `0x9FA9F632F2b6afCbb112Ee53D2638202EfE9B71A`
+* Address: https://sepolia.etherscan.io/token/0x9fa9f632f2b6afcbb112ee53d2638202efe9b71a
 * Mintable test token
 * Token name: Mock USDC (USDC)
 
 **FlashDuel Contract**
 
-* Address: `0x7c1d47ED0aFC7efCc2d6592b7Da3D838D97A00B4`
+* Address: https://sepolia.etherscan.io/address/0x7c1d47ed0afc7efcc2d6592b7da3d838d97a00b4
 * Handles match creation, stake locking, and settlement
 
 Network: **Sepolia Ethereum**
